@@ -1,29 +1,5 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  setDoc, 
-  getDocs, 
-  updateDoc, 
-  onSnapshot, 
-  query 
-} from 'firebase/firestore';
+import { supabase } from './supabaseClient';
 import { DailyReport } from '../types/cucom';
-
-export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDXK22phiazERzbFOZrYR4HhEJQrpSXGH0",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "engineering-work-portal.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "engineering-work-portal",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "engineering-work-portal.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "38777137883",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:38777137883:web:5c719dd28f3fd91454bafe",
-};
-
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-
-const COLLECTION_NAME = 'cucom_daily_reports';
 
 // BroadcastChannel for instant cross-tab / multi-window synchronization
 let broadcastChannel: BroadcastChannel | null = null;
@@ -56,38 +32,131 @@ export function onBroadcastUpdate(callback: (report: DailyReport) => void) {
   return () => broadcastChannel?.removeEventListener('message', handler);
 }
 
-// Clean object for Firestore storage
-const sanitize = <T>(obj: T): T => JSON.parse(JSON.stringify(obj));
+// Convert DailyReport to Supabase row format
+function toSupabaseRow(report: DailyReport) {
+  return {
+    id: report.id,
+    user_id: `user-${report.staffId}`,
+    staff_id: report.staffId,
+    staff_name: report.staffName,
+    department: report.department,
+    designation: report.designation,
+    date: report.date,
+    submission_time: report.submissionTime,
+    submission_timestamp: report.submissionTimestamp,
+    deadline: report.deadline || '4:00 PM',
+    compliance_status: report.complianceStatus,
+    overall_status: report.overallStatus,
+    priority: report.priority || 'Normal',
+    work_done_summary: report.workDoneSummary || '',
+    activities_performed: report.activitiesPerformed || '',
+    issues_held: report.issuesHeld || '',
+    cash_collected: report.cashCollected || '',
+    has_unusual_activities: Boolean(report.hasUnusualActivities),
+    unusual_activity_type: report.unusualActivityType || null,
+    unusual_activities_details: report.unusualActivitiesDetails || '',
+    key_achievements: report.keyAchievementsSummary || '',
+    challenges: report.challengeBlocker || '',
+    support_needed: Boolean(report.supportNeeded),
+    support_details: report.supportDetails || '',
+    priority_tomorrow: report.priorityTomorrow || '',
+    manager_review: report.managerReview || '',
+    reviewed_by: report.reviewedBy || '',
+    reviewed_at: report.reviewedAt || '',
+    is_draft: Boolean(report.isDraft),
+    updated_at: report.updatedAt || new Date().toISOString()
+  };
+}
 
-// Cloud save
+// Convert Supabase row to DailyReport format
+export function fromSupabaseRow(row: any): DailyReport {
+  return {
+    id: row.id,
+    staffId: row.staff_id || row.id?.split('_')[1] || row.user_id?.replace('user-', '') || '',
+    staffName: row.staff_name,
+    department: row.department,
+    designation: row.designation,
+    date: row.date,
+    deadline: row.deadline || '4:00 PM',
+    submissionTime: row.submission_time,
+    submissionTimestamp: row.submission_timestamp,
+    complianceStatus: row.compliance_status || 'On Time',
+    overallStatus: row.overall_status || 'Completed',
+    priority: row.priority || 'Normal',
+    tasks: [],
+    workDoneSummary: row.work_done_summary || '',
+    activitiesPerformed: row.activities_performed || '',
+    issuesHeld: row.issues_held || '',
+    cashCollected: row.cash_collected || '',
+    hasUnusualActivities: Boolean(row.has_unusual_activities),
+    unusualActivityType: row.unusual_activity_type,
+    unusualActivitiesDetails: row.unusual_activities_details || '',
+    keyAchievementsSummary: row.key_achievements || '',
+    challengeBlocker: row.challenges || '',
+    supportNeeded: Boolean(row.support_needed),
+    supportDetails: row.support_details || '',
+    priorityTomorrow: row.priority_tomorrow || '',
+    managerReview: row.manager_review || '',
+    reviewedBy: row.reviewed_by || '',
+    reviewedAt: row.reviewed_at || '',
+    isDraft: Boolean(row.is_draft),
+    updatedAt: row.updated_at
+  };
+}
+
+// Cloud save to Supabase
 export async function syncReportToCloud(report: DailyReport): Promise<boolean> {
   try {
-    const docRef = doc(db, COLLECTION_NAME, report.id);
-    await setDoc(docRef, sanitize(report), { merge: true });
+    const row = toSupabaseRow(report);
+    const { error } = await supabase.from('reports').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('Supabase sync note (using local cache):', error.message);
+      return false;
+    }
     return true;
   } catch (err) {
-    console.warn('Cloud sync error (fallback to local active):', err);
+    console.warn('Supabase sync exception (using local cache):', err);
     return false;
   }
 }
 
-// Real-time Cloud listener
+// Fetch all reports from Supabase
+export async function fetchReportsFromSupabase(): Promise<DailyReport[]> {
+  try {
+    const { data, error } = await supabase.from('reports').select('*');
+    if (error) {
+      console.warn('Supabase fetch note (using local cache):', error.message);
+      return [];
+    }
+    return (data || []).map(fromSupabaseRow);
+  } catch (err) {
+    console.warn('Supabase fetch exception:', err);
+    return [];
+  }
+}
+
+// Real-time Supabase Cloud listener
 export function subscribeToCloudReports(onData: (reports: DailyReport[]) => void) {
   try {
-    const q = query(collection(db, COLLECTION_NAME));
-    return onSnapshot(q, (snapshot) => {
-      const cloudList: DailyReport[] = [];
-      snapshot.forEach(docSnap => {
-        cloudList.push(docSnap.data() as DailyReport);
-      });
-      if (cloudList.length > 0) {
-        onData(cloudList);
-      }
-    }, (error) => {
-      console.warn('Firestore subscription inactive, using local store:', error.message);
-    });
+    const channel = supabase
+      .channel('public:reports')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reports' },
+        async () => {
+          const reports = await fetchReportsFromSupabase();
+          if (reports.length > 0) {
+            onData(reports);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   } catch (e) {
-    console.warn('Cloud subscription error:', e);
+    console.warn('Supabase subscription error:', e);
     return () => {};
   }
 }

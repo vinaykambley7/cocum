@@ -401,7 +401,7 @@ export function exportMasterLogToPDF(reports: DailyReport[], date: string) {
       fontSize: 7.5,
       textColor: [30, 41, 59]
     },
-    didParseCell: function(data) {
+    didParseCell: function(data: any) {
       if (data.column.index === 8 && data.cell.section === 'body') {
         if (data.cell.raw === 'On Time') {
           data.cell.styles.textColor = [22, 101, 52];

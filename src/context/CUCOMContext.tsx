@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { StaffMember, DailyReport, DashboardMetrics, ComplianceStatus, TaskStatus, SyncStatus, StaffScope, UserAccount, ActiveView, ThemeMode } from '../types/cucom';
 import { CUCOM_STAFF, createEmptyReport, getInitialDemoReports } from '../data/cucomCatalog';
 import { ADMIN_USER, STAFF_ACCOUNTS, authenticateUser } from '../data/cucomAccounts';
-import { syncReportToCloud, subscribeToCloudReports, broadcastReportUpdate, onBroadcastUpdate } from '../services/cucomSync';
+import { syncReportToCloud, subscribeToCloudReports, broadcastReportUpdate, onBroadcastUpdate, fetchReportsFromSupabase } from '../services/cucomSync';
 import { generateHistoricalReports } from '../services/cucomAnalytics';
 
 interface CUCOMContextType {
@@ -60,17 +60,17 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const staffList = useMemo(() => CUCOM_STAFF, []);
 
-  // 1. Authentication State
+  // 1. Authentication State - strictly requires explicit login on opening the app
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     try {
-      const saved = localStorage.getItem(AUTH_SESSION_KEY);
+      const saved = sessionStorage.getItem(AUTH_SESSION_KEY);
       if (saved) {
         return JSON.parse(saved);
       }
     } catch (e) {
       console.warn('Failed to parse auth session', e);
     }
-    return ADMIN_USER;
+    return null;
   });
 
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -176,7 +176,9 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const user = authenticateUser(usernameOrEmail, passwordInput);
     if (user) {
       setCurrentUser(user);
-      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+      try {
+        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+      } catch (e) {}
       if (user.role === 'ADMIN') {
         setActiveView('DASHBOARD');
       } else {
@@ -189,7 +191,9 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const quickLoginAs = (user: UserAccount) => {
     setCurrentUser(user);
-    localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+    try {
+      sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+    } catch (e) {}
     if (user.role === 'ADMIN') {
       setActiveView('DASHBOARD');
     } else {
@@ -199,14 +203,20 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const logout = () => {
     setCurrentUser(null);
-    localStorage.removeItem(AUTH_SESSION_KEY);
-    setActiveView('DASHBOARD');
+    try {
+      sessionStorage.removeItem(AUTH_SESSION_KEY);
+      localStorage.removeItem(AUTH_SESSION_KEY);
+      localStorage.removeItem('cucom_auth_session');
+    } catch (e) {}
+    setActiveView('REPORT');
   };
 
   const setIsAdmin = (admin: boolean) => {
     if (admin) {
       setCurrentUser(ADMIN_USER);
-      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(ADMIN_USER));
+      try {
+        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(ADMIN_USER));
+      } catch (e) {}
       setActiveView('DASHBOARD');
     }
   };
@@ -216,7 +226,9 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const user = STAFF_ACCOUNTS.find(u => u.staffId === staff.id);
       if (user) {
         setCurrentUser(user);
-        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+        try {
+          sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
+        } catch (e) {}
       }
       setActiveView('REPORT');
     }
@@ -237,6 +249,14 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return [];
   });
+
+  // Purge legacy persistent auto-login session keys on mount
+  useEffect(() => {
+    try {
+      localStorage.removeItem('cucom_auth_session');
+      localStorage.removeItem(AUTH_SESSION_KEY);
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     try {
@@ -271,7 +291,20 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setSyncStatus('CLOUD_SYNCED');
     });
 
-    // Central SQLite Database initial fetch
+    // Central Supabase Database initial fetch
+    fetchReportsFromSupabase().then(cloudReports => {
+      if (cloudReports && cloudReports.length > 0) {
+        setReports(prev => {
+          const map = new Map<string, DailyReport>();
+          prev.forEach(r => map.set(r.id, r));
+          cloudReports.forEach(r => map.set(r.id, r));
+          return Array.from(map.values());
+        });
+        setSyncStatus('CLOUD_SYNCED');
+      }
+    });
+
+    // Central SQLite Database initial fetch (local dev)
     fetch('/api/reports')
       .then(res => res.json())
       .then(data => {

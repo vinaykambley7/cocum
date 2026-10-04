@@ -97,23 +97,59 @@ Every candidate has an authenticated account with password **`123`** (or `cucom1
 
 ---
 
+---
+
+## 🌐 Deploying to Vercel
+
+The project is fully pre-configured for **Vercel** with [`vercel.json`](file:///C:/Users/DELL/Downloads/cucom-daily-reporting-system/vercel.json) (handling Vite build, client-side routing, and SPA rewrites).
+
+### Step-by-Step Vercel Deployment:
+
+1. **Push your code to GitHub** (from your VS Code terminal or Git Source Control):
+   ```bash
+   git add .
+   git commit -m "feat: configure Vercel deployment and clean submission form"
+   git push origin main
+   ```
+
+2. **Go to Vercel**:
+   - Log in to [vercel.com](https://vercel.com)
+   - Click **"Add New..."** -> **"Project"**
+   - Select your repository: **`cocum`** (`vinaykambley7/cocum`)
+   - Click **"Import"**
+
+3. **Configure Project Settings**:
+   - **Framework Preset**: `Vite` (automatically detected)
+   - **Root Directory**: `./` (leave default)
+   - **Build Command**: `npm run build` (configured automatically via `vercel.json`)
+   - **Output Directory**: `dist` (configured automatically via `vercel.json`)
+   - **Install Command**: `npm install`
+
+4. **Deploy**:
+   - Click **"Deploy"**
+   - In less than 1 minute, Vercel will build and assign you a live production URL (e.g. `https://cocum.vercel.app`)!
+
+---
+
 ## 📋 Operational Daily Report Form Structure
 
-The report form captures:
+The streamlined report form captures:
 1. **Report Date**: Automatic calendar picker defaulting to current date.
 2. **Locked Candidate Info**: Fixed Submitter Name, Role, and Department.
-3. **What Work Did You Do Today?**: High-level primary duties summary.
-4. **What Activities Have Been Performed Today?**: Activities narrative breakdown plus operational checklist with status badges (*Done*, *In Progress*, *Pending*) and volume outputs.
-5. **Were There Any Issues or Problems Held Today?**: Interactive toggle (*Issues Held* vs *No Issues Held*) and bottleneck notes.
-6. **Cash / Revenue Generated & Collected Today**: Specific receipts/deposits collected (or `$0.00 / N/A`) and source breakdown.
-7. **Unusual, Extra or Unwanted Activities / Incidents**: Emergency/unwanted occurrences flag, category selection, and comprehensive narrative description.
-8. **Top Priority for Tomorrow**: Clear operational commitment for next shift.
+3. **1. What Work Did You Do Today?**: High-level primary duties summary.
+4. **2. What Activities Have Been Performed Today?**: Clean, free-form narrative description for all daily activities and operations.
+5. **3. Were There Any Issues or Problems Held Today?**: Interactive toggle (*Issues Held* vs *No Issues Held / Smooth*) with detailed bottleneck notes.
+6. **4. Cash / Revenue Generated & Collected Today**: Specific receipts/deposits collected (or `$0.00 / N/A`) and source breakdown.
+7. **5. Unusual, Extra or Unwanted Activities / Incidents**: Emergency/unwanted occurrences flag, category selection, and comprehensive narrative description.
+8. **6. Top Priority for Tomorrow**: Clear operational commitment for next shift.
 
 ---
 
 ## 🛠 Tech Stack
 
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons
-- **Backend**: Express.js, Node.js SQLite (`node:sqlite` embedded production database)
+- **Backend & SQLite DB**: Express.js, Node.js SQLite (`node:sqlite` embedded production database)
+- **Deployment**: Vercel ready (`vercel.json` SPA configuration included)
 - **Reporting & Export**: jsPDF, jspdf-autotable, SheetJS (xlsx), HTML2Canvas
 - **Scheduling**: Node-cron background reminder scheduler
+
