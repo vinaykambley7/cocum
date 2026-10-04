@@ -65,7 +65,13 @@ export const PageHeader: React.FC = () => {
         return {
           breadcrumb: 'Executive Administration',
           title: 'Executive Submission Dashboard',
-          subtitle: "Monitor daily submissions, audit 25-candidate compliance, and provide leadership guidance."
+          subtitle: "Monitor daily submissions, audit institutional staff compliance, and provide leadership guidance."
+        };
+      case 'USERS':
+        return {
+          breadcrumb: 'Executive Administration',
+          title: 'Staff & User Access Authority',
+          subtitle: 'Create, modify, and manage institutional staff accounts, passwords, departments, and designations.'
         };
       case 'ANALYTICS':
         return {

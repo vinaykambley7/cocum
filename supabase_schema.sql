@@ -65,3 +65,4 @@ CREATE POLICY "Public full access on users" ON public.users FOR ALL USING (true)
 -- 4. Enable Realtime Replication
 ALTER PUBLICATION supabase_realtime ADD TABLE public.reports;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.users;
+

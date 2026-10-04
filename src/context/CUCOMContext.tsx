@@ -1,19 +1,31 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { StaffMember, DailyReport, DashboardMetrics, ComplianceStatus, TaskStatus, SyncStatus, StaffScope, UserAccount, ActiveView, ThemeMode } from '../types/cucom';
-import { CUCOM_STAFF, createEmptyReport, getInitialDemoReports } from '../data/cucomCatalog';
-import { ADMIN_USER, STAFF_ACCOUNTS, authenticateUser } from '../data/cucomAccounts';
-import { syncReportToCloud, subscribeToCloudReports, broadcastReportUpdate, onBroadcastUpdate, fetchReportsFromSupabase } from '../services/cucomSync';
+import { DEFAULT_DEPARTMENTS, DEFAULT_DESIGNATIONS, createEmptyReport, getInitialDemoReports } from '../data/cucomCatalog';
+import { ADMIN_USER, authenticateUser } from '../data/cucomAccounts';
+import { 
+  syncReportToCloud, 
+  subscribeToCloudReports, 
+  broadcastReportUpdate, 
+  onBroadcastUpdate, 
+  fetchReportsFromSupabase,
+  syncUserToCloud,
+  fetchUsersFromCloud,
+  deleteUserFromCloud
+} from '../services/cucomSync';
 import { generateHistoricalReports } from '../services/cucomAnalytics';
 
 interface CUCOMContextType {
   currentUser: UserAccount | null;
+  users: UserAccount[];
   staffList: StaffMember[];
   filteredStaffList: StaffMember[];
   currentStaff: StaffMember | null;
+  departments: string[];
+  designations: string[];
   isAdmin: boolean;
   selectedDate: string;
-  deadlineTime: string; // "16:00" (4:00 PM) or "17:00" (5:00 PM)
-  deadlineFormatted: string; // "4:00 PM" or "5:00 PM"
+  deadlineTime: string;
+  deadlineFormatted: string;
   staffScope: StaffScope;
   syncStatus: SyncStatus;
   reports: DailyReport[];
@@ -25,6 +37,20 @@ interface CUCOMContextType {
   login: (usernameOrEmail: string, password: string) => boolean;
   quickLoginAs: (user: UserAccount) => void;
   logout: () => void;
+  
+  // Admin User Authority methods
+  createUser: (data: {
+    name: string;
+    username: string;
+    email: string;
+    password?: string;
+    department: string;
+    designation: string;
+  }) => { success: boolean; message: string; user?: UserAccount };
+  updateUser: (userId: string, updates: Partial<UserAccount>) => { success: boolean; message: string };
+  deleteUser: (userId: string) => { success: boolean; message: string };
+  addDepartment: (deptName: string) => void;
+  addDesignation: (roleName: string) => void;
   
   setActiveView: (view: ActiveView) => void;
   setIsMobileNavOpen: (open: boolean) => void;
@@ -48,8 +74,11 @@ interface CUCOMContextType {
 
 const CUCOMContext = createContext<CUCOMContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'cucom_25_candidates_v1';
-const AUTH_SESSION_KEY = 'cucom_auth_25_candidates_v1';
+const STORAGE_KEY = 'cucom_reports_data_v2';
+const USERS_STORAGE_KEY = 'cucom_admin_managed_users_v2';
+const DEPARTMENTS_STORAGE_KEY = 'cucom_departments_v2';
+const DESIGNATIONS_STORAGE_KEY = 'cucom_designations_v2';
+const AUTH_SESSION_KEY = 'cucom_auth_user_session_v2';
 const DEADLINE_KEY = 'cucom_deadline_time_v4';
 const SCOPE_KEY = 'cucom_staff_scope_v4';
 const THEME_KEY = 'cucom_theme_mode_v4';
@@ -58,9 +87,65 @@ const LAYOUT_KEY = 'cucom_active_layout_v4';
 export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
-  const staffList = useMemo(() => CUCOM_STAFF, []);
+  // 1. Dynamic Users Management (Admin has total authority)
+  const [users, setUsers] = useState<UserAccount[]>(() => {
+    try {
+      const saved = localStorage.getItem(USERS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to parse users from storage', e);
+    }
+    return [];
+  });
 
-  // 1. Authentication State - strictly requires explicit login on opening the app
+  // Dynamic Department Suggestions (Admin can add new ones anytime)
+  const [departments, setDepartments] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(DEPARTMENTS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_DEPARTMENTS;
+  });
+
+  // Dynamic Role Suggestions (Admin can add new ones anytime)
+  const [designations, setDesignations] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(DESIGNATIONS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_DESIGNATIONS;
+  });
+
+  // Staff list derived dynamically from active staff users created by Admin
+  const staffList: StaffMember[] = useMemo(() => {
+    return users
+      .filter(u => u.role === 'STAFF' && u.isActive !== false)
+      .map((u, idx) => ({
+        sNo: idx + 1,
+        id: u.staffId || u.id.replace('user-', ''),
+        name: u.name,
+        department: u.department,
+        designation: u.designation,
+        email: u.email,
+        username: u.username,
+        password: u.password,
+        defaultKpis: [],
+        isCoreStaff: true,
+        isActive: u.isActive !== false,
+        createdAt: u.createdAt,
+      }));
+  }, [users]);
+
+  // 2. Authentication State - strictly requires explicit login on opening the app
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     try {
       const saved = sessionStorage.getItem(AUTH_SESSION_KEY);
@@ -76,21 +161,20 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const isAdmin = currentUser?.role === 'ADMIN';
 
   const currentStaff = useMemo(() => {
-    if (!currentUser) return staffList[0];
+    if (!currentUser) return staffList[0] || null;
     if (currentUser.role === 'STAFF' && currentUser.staffId) {
-      return staffList.find(s => s.id === currentUser.staffId) || staffList[0];
+      return staffList.find(s => s.id === currentUser.staffId) || staffList[0] || null;
     }
-    return staffList[0];
+    return staffList[0] || null;
   }, [currentUser, staffList]);
 
   // Persistent Active layout/view
   const [activeView, setActiveViewState] = useState<ActiveView>(() => {
     try {
       const saved = localStorage.getItem(LAYOUT_KEY) as ActiveView;
-      const validViews: ActiveView[] = ['REPORT', 'DASHBOARD', 'MASTER_LOG', 'INSTRUCTIONS', 'ANALYTICS', 'REMINDERS'];
+      const validViews: ActiveView[] = ['REPORT', 'DASHBOARD', 'MASTER_LOG', 'INSTRUCTIONS', 'ANALYTICS', 'REMINDERS', 'USERS'];
       if (saved && validViews.includes(saved)) {
-        // If staff, verify not restricted to admin
-        if (currentUser?.role === 'STAFF' && (saved === 'DASHBOARD' || saved === 'ANALYTICS')) {
+        if (currentUser?.role === 'STAFF' && (saved === 'DASHBOARD' || saved === 'ANALYTICS' || saved === 'USERS')) {
           return 'REPORT';
         }
         return saved;
@@ -98,7 +182,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {
       console.warn('Failed to parse active layout', e);
     }
-    return currentUser?.role === 'ADMIN' ? 'DASHBOARD' : 'REPORT';
+    return currentUser?.role === 'ADMIN' ? 'USERS' : 'REPORT';
   });
 
   const setActiveView = useCallback((view: ActiveView) => {
@@ -140,7 +224,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('LOCAL_ACTIVE');
 
-  // Deadline: default 4:00 PM matching the latest dashboard screenshot
+  // Deadline: default 4:00 PM
   const [deadlineTime, setDeadlineTimeState] = useState<string>(() => {
     return localStorage.getItem(DEADLINE_KEY) || '16:00';
   });
@@ -154,7 +238,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem(DEADLINE_KEY, time);
   };
 
-  // Staff Scope: All 25 vs Core 18
+  // Staff Scope: All vs Core
   const [staffScope, setStaffScopeState] = useState<StaffScope>(() => {
     return (localStorage.getItem(SCOPE_KEY) as StaffScope) || 'ALL_25';
   });
@@ -165,22 +249,146 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const filteredStaffList = useMemo(() => {
-    if (staffScope === 'CORE_18') {
-      return staffList.filter(s => s.isCoreStaff || s.sNo <= 18);
-    }
     return staffList;
-  }, [staffList, staffScope]);
+  }, [staffList]);
+
+  // Dynamic Suggestion Helpers
+  const addDepartment = useCallback((deptName: string) => {
+    const trimmed = deptName.trim();
+    if (!trimmed) return;
+    setDepartments(prev => {
+      if (prev.includes(trimmed)) return prev;
+      const next = [...prev, trimmed];
+      try {
+        localStorage.setItem(DEPARTMENTS_STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  }, []);
+
+  const addDesignation = useCallback((roleName: string) => {
+    const trimmed = roleName.trim();
+    if (!trimmed) return;
+    setDesignations(prev => {
+      if (prev.includes(trimmed)) return prev;
+      const next = [...prev, trimmed];
+      try {
+        localStorage.setItem(DESIGNATIONS_STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  }, []);
+
+  // Admin User Authority: Create, Update, Delete
+  const createUser = useCallback((data: {
+    name: string;
+    username: string;
+    email: string;
+    password?: string;
+    department: string;
+    designation: string;
+  }) => {
+    const cleanName = data.name.trim();
+    const cleanUsername = data.username.trim().toLowerCase().replace(/\s+/g, '.');
+    const cleanEmail = data.email.trim().toLowerCase();
+    const cleanPassword = data.password?.trim() || '123';
+    const cleanDept = data.department.trim();
+    const cleanRole = data.designation.trim();
+
+    if (!cleanName) return { success: false, message: 'Full Name is required.' };
+    if (!cleanUsername) return { success: false, message: 'Username is required.' };
+    if (!cleanDept) return { success: false, message: 'Department is required.' };
+    if (!cleanRole) return { success: false, message: 'Designation / Role is required.' };
+
+    const exists = users.some(
+      u => u.username.toLowerCase() === cleanUsername || (cleanEmail && u.email.toLowerCase() === cleanEmail)
+    );
+    if (exists || cleanUsername === 'admin') {
+      return { success: false, message: `Username '${cleanUsername}' or email already exists. Please choose a unique username.` };
+    }
+
+    const staffId = `staff-${Date.now()}`;
+    const newUser: UserAccount = {
+      id: `user-${staffId}`,
+      name: cleanName,
+      username: cleanUsername,
+      role: 'STAFF',
+      staffId: staffId,
+      department: cleanDept,
+      designation: cleanRole,
+      email: cleanEmail || `${cleanUsername}@cucom.edu.ag`,
+      password: cleanPassword,
+      isActive: true,
+      createdAt: new Date().toISOString()
+    };
+
+    setUsers(prev => {
+      const next = [...prev, newUser];
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    addDepartment(cleanDept);
+    addDesignation(cleanRole);
+
+    // Sync to Supabase cloud
+    syncUserToCloud(newUser).catch(err => console.warn('User cloud sync notice:', err));
+
+    return { success: true, message: `Candidate account '${cleanName}' created successfully!`, user: newUser };
+  }, [users, addDepartment, addDesignation]);
+
+  const updateUser = useCallback((userId: string, updates: Partial<UserAccount>) => {
+    let updatedUser: UserAccount | null = null;
+    setUsers(prev => {
+      const next = prev.map(u => {
+        if (u.id === userId) {
+          updatedUser = { ...u, ...updates };
+          return updatedUser;
+        }
+        return u;
+      });
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (updatedUser) {
+      syncUserToCloud(updatedUser).catch(err => console.warn('User cloud sync notice:', err));
+      if (currentUser?.id === userId) {
+        setCurrentUser(updatedUser);
+      }
+      if (updates.department) addDepartment(updates.department);
+      if (updates.designation) addDesignation(updates.designation);
+      return { success: true, message: 'User updated successfully.' };
+    }
+    return { success: false, message: 'User not found.' };
+  }, [currentUser, addDepartment, addDesignation]);
+
+  const deleteUser = useCallback((userId: string) => {
+    setUsers(prev => {
+      const next = prev.filter(u => u.id !== userId);
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+    deleteUserFromCloud(userId).catch(err => console.warn('User cloud delete notice:', err));
+    return { success: true, message: 'User deleted successfully.' };
+  }, []);
 
   // Auth Functions
   const login = (usernameOrEmail: string, passwordInput: string): boolean => {
-    const user = authenticateUser(usernameOrEmail, passwordInput);
+    const user = authenticateUser(usernameOrEmail, passwordInput, users);
     if (user) {
       setCurrentUser(user);
       try {
         sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
       } catch (e) {}
       if (user.role === 'ADMIN') {
-        setActiveView('DASHBOARD');
+        setActiveView('USERS');
       } else {
         setActiveView('REPORT');
       }
@@ -195,7 +403,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
     } catch (e) {}
     if (user.role === 'ADMIN') {
-      setActiveView('DASHBOARD');
+      setActiveView('USERS');
     } else {
       setActiveView('REPORT');
     }
@@ -217,13 +425,13 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(ADMIN_USER));
       } catch (e) {}
-      setActiveView('DASHBOARD');
+      setActiveView('USERS');
     }
   };
 
   const setCurrentStaff = (staff: StaffMember | null) => {
     if (staff) {
-      const user = STAFF_ACCOUNTS.find(u => u.staffId === staff.id);
+      const user = users.find(u => u.staffId === staff.id) || null;
       if (user) {
         setCurrentUser(user);
         try {
@@ -254,8 +462,26 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     try {
       localStorage.removeItem('cucom_auth_session');
-      localStorage.removeItem(AUTH_SESSION_KEY);
+      localStorage.removeItem('cucom_auth_25_candidates_v1');
     } catch (e) {}
+  }, []);
+
+  // Fetch Users from Cloud on Mount
+  useEffect(() => {
+    fetchUsersFromCloud().then(cloudUsers => {
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers(prev => {
+          const map = new Map<string, UserAccount>();
+          prev.forEach(u => map.set(u.id, u));
+          cloudUsers.forEach(u => map.set(u.id, u));
+          const merged = Array.from(map.values());
+          try {
+            localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -377,46 +603,68 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       const [dHours, dMinutes] = deadlineTime.split(':').map(Number);
-      return (hours > dHours) || (hours === dHours && minutes > dMinutes);
+      if (hours > dHours) return true;
+      if (hours === dHours && minutes > dMinutes) return true;
+      return false;
     } catch (e) {
       return false;
     }
   }, [deadlineTime]);
 
-  const getReportForStaff = useCallback((staffId: string, date: string): DailyReport => {
-    const existing = reports.find(r => r.staffId === staffId && r.date === date);
-    if (existing) {
-      return existing;
-    }
-    const staff = staffList.find(s => s.id === staffId);
-    if (!staff) {
-      throw new Error(`Staff ${staffId} not found`);
-    }
-    const empty = createEmptyReport(staff, date);
-    empty.deadline = deadlineFormatted;
-    return empty;
-  }, [reports, staffList, deadlineFormatted]);
+  const getReportForStaff = useCallback(
+    (staffId: string, date: string): DailyReport => {
+      const existing = reports.find(r => r.staffId === staffId && r.date === date);
+      if (existing) return existing;
 
-  const saveReport = (updatedReport: DailyReport, isSubmit: boolean = false) => {
-    const now = new Date();
-    const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      const staff = staffList.find(s => s.id === staffId);
+      if (staff) {
+        return createEmptyReport(staff, date);
+      }
 
-    let finalReport = { 
-      ...updatedReport, 
-      deadline: deadlineFormatted,
-      updatedAt: now.toISOString() 
-    };
-
-    if (isSubmit) {
-      const isLate = checkIsLate(updatedReport.date, formattedTime);
-      finalReport = {
-        ...finalReport,
-        isDraft: false,
-        submissionTimestamp: now.toISOString(),
-        submissionTime: formattedTime,
-        complianceStatus: (isLate ? 'LATE' : 'SUBMITTED ON TIME') as ComplianceStatus,
+      return {
+        id: `${date}_${staffId}`,
+        date,
+        staffId,
+        staffName: currentUser?.name || 'Staff Member',
+        department: currentUser?.department || 'Department',
+        designation: currentUser?.designation || 'Staff',
+        deadline: deadlineFormatted,
+        complianceStatus: 'NOT SUBMITTED',
+        priority: 'Normal',
+        workDoneSummary: '',
+        activitiesPerformed: '',
+        issuesHeld: '',
+        cashCollected: '',
+        hasUnusualActivities: false,
+        unusualActivityType: '',
+        unusualActivitiesDetails: '',
+        tasks: [],
+        overallStatus: 'Pending',
+        supportNeeded: false,
+        supportDetails: '',
+        challengeBlocker: '',
+        priorityTomorrow: '',
+        keyAchievementsSummary: '',
+        updatedAt: new Date().toISOString(),
       };
-    }
+    },
+    [reports, staffList, deadlineFormatted, currentUser]
+  );
+
+  const saveReport = (report: DailyReport, isSubmit: boolean = false) => {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const isLate = checkIsLate(report.date, timeStr);
+
+    const finalReport: DailyReport = {
+      ...report,
+      isDraft: !isSubmit,
+      submissionTime: isSubmit ? timeStr : report.submissionTime,
+      submissionTimestamp: isSubmit ? now.toISOString() : report.submissionTimestamp,
+      complianceStatus: isSubmit ? (isLate ? 'LATE' : 'SUBMITTED ON TIME') : 'NOT SUBMITTED',
+      deadline: deadlineFormatted,
+      updatedAt: now.toISOString(),
+    };
 
     setReports(prev => {
       const idx = prev.findIndex(r => r.id === finalReport.id);
@@ -481,25 +729,22 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let late = 0;
     let totalTaskEntries = 0;
     let pendingTasks = 0;
-    let inProgressTasks = 0;
-    let completedTasks = 0;
 
     dateReports.forEach(r => {
       if (r.complianceStatus === 'SUBMITTED ON TIME') submittedOnTime++;
-      else if (r.complianceStatus === 'LATE') late++;
-
-      r.tasks.forEach(t => {
-        if (t.description && t.description.trim() !== '') {
-          totalTaskEntries++;
-          if (t.status === 'Done') completedTasks++;
-          else if (t.status === 'In Progress') inProgressTasks++;
-          else pendingTasks++;
-        }
+      if (r.complianceStatus === 'LATE') late++;
+      (r.tasks || []).forEach(t => {
+        totalTaskEntries++;
+        if (t.status === 'Pending') pendingTasks++;
       });
     });
 
-    const notSubmitted = Math.max(0, totalRequired - (submittedOnTime + late));
-    const complianceRate = totalRequired > 0 ? ((submittedOnTime + late) / totalRequired) * 100 : 0;
+    const totalSubmitted = submittedOnTime + late;
+    const notSubmitted = Math.max(0, totalRequired - totalSubmitted);
+    const missingReports = notSubmitted;
+    const complianceRate = totalRequired > 0 ? (totalSubmitted / totalRequired) * 100 : 0;
+    const submissionRate = Math.round(complianceRate);
+    const onTimeRate = totalSubmitted > 0 ? Math.round((submittedOnTime / totalSubmitted) * 100) : 0;
 
     return {
       totalRequired,
@@ -509,34 +754,33 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       complianceRate,
       totalTaskEntries,
       pendingTasks,
-      inProgressTasks,
-      completedTasks,
+      inProgressTasks: 0,
+      completedTasks: 0,
+      missingReports,
+      submissionRate,
+      onTimeRate,
+      criticalBlockersCount: dateReports.filter(r => Boolean(r.issuesHeld || r.hasUnusualActivities)).length,
+      pendingTasksCount: pendingTasks,
     };
   }, [filteredStaffList, reports]);
 
   const resetToDemoData = () => {
-    const todayReports = getInitialDemoReports(selectedDate);
-    const historicalReports = generateHistoricalReports(14, staffList);
-    const map = new Map<string, DailyReport>();
-    historicalReports.forEach(r => map.set(r.id, r));
-    todayReports.forEach(r => map.set(r.id, r));
-    const demo = Array.from(map.values());
-
-    setReports(demo);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(demo));
-    demo.slice(0, 5).forEach(r => {
-      broadcastReportUpdate(r);
-      syncReportToCloud(r);
-    });
+    setReports([]);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {}
   };
 
   return (
     <CUCOMContext.Provider
       value={{
         currentUser,
+        users,
         staffList,
         filteredStaffList,
         currentStaff,
+        departments,
+        designations,
         isAdmin,
         selectedDate,
         deadlineTime,
@@ -551,6 +795,11 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         login,
         quickLoginAs,
         logout,
+        createUser,
+        updateUser,
+        deleteUser,
+        addDepartment,
+        addDesignation,
         setActiveView,
         setIsMobileNavOpen,
         setCurrentStaff,
@@ -575,10 +824,10 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 };
 
-export const useCUCOM = (): CUCOMContextType => {
+export const useCUCOM = () => {
   const context = useContext(CUCOMContext);
   if (!context) {
-    throw new Error('useCUCOM must be used within CUCOMProvider');
+    throw new Error('useCUCOM must be used within a CUCOMProvider');
   }
   return context;
 };

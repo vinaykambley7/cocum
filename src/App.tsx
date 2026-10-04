@@ -9,6 +9,7 @@ import { MasterLogView } from './components/cucom/MasterLogView';
 import { StaffInstructionsView } from './components/cucom/StaffInstructionsView';
 import { AdminAnalyticsDashboard } from './components/cucom/AdminAnalyticsDashboard';
 import { AdminRemindersView } from './components/cucom/AdminRemindersView';
+import { AdminUserManagementView } from './components/cucom/AdminUserManagementView';
 import { Building2, FileSpreadsheet, ShieldCheck } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
@@ -32,6 +33,7 @@ const MainLayout: React.FC = () => {
 
         {/* 2B. MAIN CONTENT: Active Layout Component */}
         <main className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 py-2 space-y-6">
+          {activeView === 'USERS' && <AdminUserManagementView />}
           {activeView === 'DASHBOARD' && <ManagementDashboard />}
           {activeView === 'ANALYTICS' && <AdminAnalyticsDashboard />}
           {activeView === 'REMINDERS' && <AdminRemindersView />}

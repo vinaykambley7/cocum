@@ -1,28 +1,4 @@
-export type DepartmentRole =
-  | 'Human Resources'
-  | 'Library'
-  | 'Registrar Administration'
-  | 'Finance & Accounts'
-  | 'Administration'
-  | 'Academic Registrar'
-  | 'Front Office'
-  | 'Campus Facilities'
-  | 'Kitchen & Catering'
-  | 'Housekeeping'
-  | 'Grounds Maintenance'
-  | 'Transport'
-  | 'IT'
-  | 'Student Affairs'
-  | 'Quality Assurance & Compliance'
-  | 'Examinations'
-  | 'Faculty - PreMed'
-  | 'Faculty - Basic Sciences'
-  | 'Dean & Academic Leadership'
-  | 'Faculty - Clinical/Pharmacology'
-  | 'Simulation Center'
-  | 'Research & Pharmacology'
-  | 'CU Connect'
-  | 'Adjunct Faculty';
+export type DepartmentRole = string;
 
 export type TaskStatus = 'Done' | 'In Progress' | 'Pending';
 export type ComplianceStatus = 'SUBMITTED ON TIME' | 'LATE' | 'NOT SUBMITTED';
@@ -38,20 +14,27 @@ export interface UserAccount {
   username: string;
   role: UserRole;
   staffId?: string; // If role === 'STAFF'
-  department: DepartmentRole | 'Executive Leadership';
+  department: string;
   designation: string;
   email: string;
+  password?: string;
+  isActive?: boolean;
+  createdAt?: string;
 }
 
 export interface StaffMember {
   sNo: number;
   id: string;
   name: string;
-  department: DepartmentRole;
+  department: string;
   designation: string;
   email: string;
+  username?: string;
+  password?: string;
   defaultKpis: string[];
-  isCoreStaff?: boolean; // Core 18 operational staff
+  isCoreStaff?: boolean; // Core operational staff
+  isActive?: boolean;
+  createdAt?: string;
 }
 
 export interface TaskEntry {
@@ -97,7 +80,7 @@ export interface DailyReport {
   updatedAt: string;
 }
 
-export type ActiveView = 'REPORT' | 'DASHBOARD' | 'MASTER_LOG' | 'INSTRUCTIONS' | 'ANALYTICS' | 'REMINDERS';
+export type ActiveView = 'REPORT' | 'DASHBOARD' | 'MASTER_LOG' | 'INSTRUCTIONS' | 'ANALYTICS' | 'REMINDERS' | 'USERS';
 
 export type AnalyticsDateRange = 'TODAY' | '7D' | '14D' | '30D' | 'ALL';
 
@@ -190,5 +173,10 @@ export interface DashboardMetrics {
   pendingTasks: number;
   inProgressTasks: number;
   completedTasks: number;
+  missingReports?: number;
+  submissionRate?: number;
+  onTimeRate?: number;
+  criticalBlockersCount?: number;
+  pendingTasksCount?: number;
 }
 

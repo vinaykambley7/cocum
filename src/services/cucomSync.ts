@@ -160,3 +160,74 @@ export function subscribeToCloudReports(onData: (reports: DailyReport[]) => void
     return () => {};
   }
 }
+
+// ==========================================
+// User Account Cloud Sync (Admin Authority)
+// ==========================================
+
+export async function syncUserToCloud(user: any): Promise<boolean> {
+  try {
+    const row = {
+      id: user.id,
+      staff_id: user.staffId || user.id.replace('user-', ''),
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      password: user.password || '123',
+      department: user.department,
+      designation: user.designation,
+      is_manager: true,
+      is_active: user.isActive !== false,
+      created_at: user.createdAt || new Date().toISOString()
+    };
+    const { error } = await supabase.from('users').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.warn('Supabase user upsert note:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Supabase user sync error:', err);
+    return false;
+  }
+}
+
+export async function fetchUsersFromCloud(): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: true });
+    if (error) {
+      console.warn('Supabase users fetch note:', error.message);
+      return [];
+    }
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      username: row.username,
+      role: 'STAFF',
+      staffId: row.staff_id || row.id.replace('user-', ''),
+      department: row.department,
+      designation: row.designation,
+      email: row.email,
+      password: row.password || '123',
+      isActive: row.is_active !== false,
+      createdAt: row.created_at
+    }));
+  } catch (err) {
+    console.warn('Supabase users fetch exception:', err);
+    return [];
+  }
+}
+
+export async function deleteUserFromCloud(userId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('users').delete().eq('id', userId);
+    if (error) {
+      console.warn('Supabase user delete note:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Supabase user delete error:', err);
+    return false;
+  }
+}
