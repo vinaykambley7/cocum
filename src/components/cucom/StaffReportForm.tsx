@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useCUCOM } from '../../context/CUCOMContext';
-import { DailyReport, TaskEntry, TaskStatus, PriorityLevel } from '../../types/cucom';
+import { DailyReport, TaskEntry, TaskStatus, PriorityLevel, StaffMember } from '../../types/cucom';
 import { exportReportToPDF } from '../../utils/cucomExport';
 import { 
   Send, 
@@ -43,13 +43,23 @@ export const StaffReportForm: React.FC = () => {
     staffList,
     setCurrentStaff,
     deadlineFormatted,
-    isAdmin
+    isAdmin,
+    setActiveView
   } = useCUCOM();
 
   // If regular candidate, strictly lock to their own account; if Admin, can select candidate
-  const activeStaff = (!isAdmin && currentUser?.staffId 
+  const activeStaff: StaffMember = (!isAdmin && currentUser?.staffId 
     ? staffList.find(s => s.id === currentUser.staffId) 
-    : null) || currentStaff || staffList[0];
+    : null) || currentStaff || staffList[0] || {
+      sNo: 0,
+      id: currentUser?.staffId || currentUser?.id || 'admin-preview',
+      name: currentUser?.name || 'Administrator (Preview Mode)',
+      department: currentUser?.department || 'Executive Leadership',
+      designation: currentUser?.designation || 'Administrator',
+      email: currentUser?.email || 'admin@cucom.edu.ag',
+      defaultKpis: [],
+      isActive: true
+    };
 
   const [report, setReport] = useState<DailyReport>(() => {
     return getReportForStaff(activeStaff.id, selectedDate);
@@ -59,7 +69,7 @@ export const StaffReportForm: React.FC = () => {
   const [justSubmitted, setJustSubmitted] = useState<boolean>(false);
 
   useEffect(() => {
-    if (activeStaff) {
+    if (activeStaff && activeStaff.id) {
       setReport(getReportForStaff(activeStaff.id, selectedDate));
       setJustSubmitted(false);
     }
@@ -139,6 +149,32 @@ export const StaffReportForm: React.FC = () => {
             <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
           )}
           <span>{notification.message}</span>
+        </div>
+      )}
+
+      {/* Administrator Preview Notice if staffList is empty */}
+      {isAdmin && staffList.length === 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 shrink-0">
+              <User className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="font-black text-amber-900 dark:text-amber-200 text-sm block">
+                Administrator Form Preview Mode
+              </span>
+              <span className="text-amber-700 dark:text-amber-400">
+                The staff roster is currently empty. You can test filling and submitting this form, or open Staff &amp; User Authority to create staff login accounts.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveView('USERS')}
+            className="px-4 py-2 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-xs transition cursor-pointer shrink-0"
+          >
+            + Create Staff Accounts
+          </button>
         </div>
       )}
 

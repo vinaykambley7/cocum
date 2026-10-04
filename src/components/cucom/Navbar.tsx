@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useCUCOM } from '../../context/CUCOMContext';
-import { MANAGER_STAFF_IDS } from '../../data/cucomAccounts';
 import { 
   Building2, 
   Clock, 
@@ -55,11 +54,10 @@ export const Navbar: React.FC = () => {
 
   const metrics = getMetricsForDate(selectedDate);
   
-  // Filter for Manager-level personnel only (25 Candidates)
-  const managerStaff = staffList.filter(s => MANAGER_STAFF_IDS.includes(s.id));
-  const departments = ['ALL', ...Array.from(new Set(managerStaff.map(s => s.department)))];
+  // Dynamic institutional staff list
+  const departments = ['ALL', ...Array.from(new Set(staffList.map(s => s.department)))];
 
-  const filteredStaff = managerStaff.filter(s => {
+  const filteredStaff = staffList.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           s.designation.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           s.department.toLowerCase().includes(searchTerm.toLowerCase());
@@ -136,7 +134,7 @@ export const Navbar: React.FC = () => {
               <span>Due: {deadlineFormatted}</span>
             </span>
             <span className="text-[10px] font-bold text-red-700 dark:text-red-400 uppercase">
-              {staffScope === 'ALL_25' ? '25 Candidates' : '25 Candidates'}
+              {staffList.length > 0 ? `${staffList.length} Staff Roster` : 'Executive System'}
             </span>
           </div>
         </div>
@@ -206,7 +204,7 @@ export const Navbar: React.FC = () => {
                     <span>Analytics & Insights</span>
                   </div>
                   <span className="text-[10px] uppercase font-bold text-red-700 dark:text-red-400">
-                    24 Depts
+                    Insights
                   </span>
                 </button>
 
@@ -253,7 +251,7 @@ export const Navbar: React.FC = () => {
                   <span>{isAdmin ? 'Staff Report Form' : 'My Daily Report'}</span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">
-                  6 KPIs
+                  Daily Form
                 </span>
               </button>
 

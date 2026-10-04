@@ -38,8 +38,8 @@ Commonwealth University College of Medicine (CUCOM)`;
     {
       step: 1,
       item: 'Who must submit?',
-      instruction: 'Every authorized Department Manager and academic unit lead listed in the institutional directory.',
-      badge: '14 Department Heads'
+      instruction: 'Every authorized staff member, department lead, and faculty member listed in the institutional directory.',
+      badge: 'All Staff Members'
     },
     {
       step: 2,
@@ -56,8 +56,8 @@ Commonwealth University College of Medicine (CUCOM)`;
     {
       step: 4,
       item: 'How to complete',
-      instruction: 'Use your role-specific template as a guide. Enter each meaningful task/activity as one row in the Daily Report sheet.',
-      badge: '6 Core KPIs'
+      instruction: 'Detail work completed, specific activities performed, any issues held, cash collected, and priorities for tomorrow.',
+      badge: 'Daily Activities'
     },
     {
       step: 5,

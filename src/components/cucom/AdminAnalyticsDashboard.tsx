@@ -69,8 +69,16 @@ export const AdminAnalyticsDashboard: React.FC = () => {
   }, [reports, staffList, dateRange, selectedDate]);
 
   // Selected employee analytics
-  const selectedStaff = useMemo(() => {
-    return staffList.find(s => s.id === selectedAnalyticsStaffId) || staffList[0];
+  const selectedStaff: StaffMember = useMemo(() => {
+    return staffList.find(s => s.id === selectedAnalyticsStaffId) || staffList[0] || {
+      sNo: 0,
+      id: 'preview-none',
+      name: 'No Staff Added Yet',
+      department: 'General',
+      designation: 'Staff',
+      email: '',
+      defaultKpis: []
+    };
   }, [staffList, selectedAnalyticsStaffId]);
 
   const employeeAnalytics = useMemo(() => {
@@ -135,6 +143,32 @@ export const AdminAnalyticsDashboard: React.FC = () => {
         <div className="fixed top-20 right-6 z-50 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700 text-xs font-bold animate-in slide-in-from-top-4">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
           <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {/* Empty Roster Notice */}
+      {staffList.length === 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                Staff Roster is Currently Empty
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                No staff profiles have been created yet. As an Administrator, create staff accounts in Staff &amp; User Authority to track departmental dossiers and analytics.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveView('USERS')}
+            className="px-4 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition cursor-pointer shrink-0"
+          >
+            + Create Staff in Staff &amp; User Authority
+          </button>
         </div>
       )}
 

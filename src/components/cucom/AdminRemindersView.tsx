@@ -67,18 +67,57 @@ interface SummaryMetrics {
 type FilterTab = 'ALL' | 'TODAY' | 'PENDING' | 'SENT' | 'FAILED' | 'MISSING_EMAIL';
 
 export const AdminRemindersView: React.FC = () => {
-  const { selectedDate, setSelectedDate, deadlineFormatted } = useCUCOM();
+  const { selectedDate, setSelectedDate, deadlineFormatted, staffList, reports } = useCUCOM();
 
   const [overview, setOverview] = useState<ManagerStatusOverview[]>([]);
   const [logs, setLogs] = useState<ReminderLogItem[]>([]);
-  const [metrics, setMetrics] = useState<SummaryMetrics>({
-    totalRequired: 27,
+  const [metrics, setMetrics] = useState<SummaryMetrics>(() => ({
+    totalRequired: staffList.length,
     submittedCount: 0,
-    pendingCount: 27,
+    pendingCount: staffList.length,
     remindersSent: 0,
     remindersFailed: 0,
     missingEmailCount: 0,
-  });
+  }));
+
+  // Fallback to live client context data if backend API is empty or offline
+  const activeOverview: ManagerStatusOverview[] = useMemo(() => {
+    if (overview.length > 0) return overview;
+    return staffList.map(s => {
+      const rep = reports.find(r => r.staffId === s.id && r.date === selectedDate && !r.isDraft);
+      return {
+        userId: s.id,
+        staffId: s.id,
+        name: s.name,
+        email: s.email || null,
+        department: s.department,
+        designation: s.designation,
+        date: selectedDate,
+        reportSubmitted: Boolean(rep),
+        reportDetails: rep ? {
+          complianceStatus: rep.complianceStatus,
+          submissionTime: rep.submissionTime,
+          overallStatus: rep.overallStatus
+        } : null,
+        reminderStatus: rep ? ('NOT_NEEDED' as const) : (!s.email ? ('MISSING_EMAIL' as const) : ('NOT_SENT' as const))
+      };
+    });
+  }, [overview, staffList, reports, selectedDate]);
+
+  const activeMetrics: SummaryMetrics = useMemo(() => {
+    if (overview.length > 0) return metrics;
+    const submitted = activeOverview.filter(o => o.reportSubmitted).length;
+    const pending = activeOverview.filter(o => !o.reportSubmitted).length;
+    const missing = activeOverview.filter(o => !o.email).length;
+    return {
+      totalRequired: staffList.length,
+      submittedCount: submitted,
+      pendingCount: pending,
+      remindersSent: 0,
+      remindersFailed: 0,
+      missingEmailCount: missing,
+    };
+  }, [overview, metrics, activeOverview, staffList.length]);
 
   const [activeFilter, setActiveFilter] = useState<FilterTab>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -161,7 +200,7 @@ export const AdminRemindersView: React.FC = () => {
 
   // Filtered managers for Overview Table
   const filteredOverview = useMemo(() => {
-    return overview.filter(item => {
+    return activeOverview.filter(item => {
       // Search matching
       const matchesSearch =
         searchQuery === '' ||
@@ -187,7 +226,7 @@ export const AdminRemindersView: React.FC = () => {
           return true;
       }
     });
-  }, [overview, activeFilter, searchQuery]);
+  }, [activeOverview, activeFilter, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -262,13 +301,13 @@ export const AdminRemindersView: React.FC = () => {
         {/* Total Managers */}
         <div className="bg-white dark:bg-[#111827] rounded-3xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Required Managers</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Required Staff</span>
             <User className="w-4 h-4 text-slate-400" />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
-            {metrics.totalRequired}
+            {activeMetrics.totalRequired}
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">14 Department Heads</p>
+          <p className="text-[11px] text-slate-500 mt-1">Institutional Roster</p>
         </div>
 
         {/* Submitted */}
@@ -278,10 +317,10 @@ export const AdminRemindersView: React.FC = () => {
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">
-            {metrics.submittedCount}
+            {activeMetrics.submittedCount}
           </div>
           <p className="text-[11px] text-emerald-700 dark:text-emerald-500 mt-1">
-            {metrics.totalRequired > 0 ? Math.round((metrics.submittedCount / metrics.totalRequired) * 100) : 0}% submission rate
+            {activeMetrics.totalRequired > 0 ? Math.round((activeMetrics.submittedCount / activeMetrics.totalRequired) * 100) : 0}% submission rate
           </p>
         </div>
 
@@ -292,7 +331,7 @@ export const AdminRemindersView: React.FC = () => {
             <Clock className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-amber-600 dark:text-amber-400">
-            {metrics.pendingCount}
+            {activeMetrics.pendingCount}
           </div>
           <p className="text-[11px] text-amber-700 dark:text-amber-500 mt-1">
             Deadline: {deadlineFormatted}
@@ -306,7 +345,7 @@ export const AdminRemindersView: React.FC = () => {
             <Send className="w-4 h-4 text-[#C60003]" />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-[#C60003] dark:text-red-400">
-            {metrics.remindersSent}
+            {activeMetrics.remindersSent}
           </div>
           <p className="text-[11px] text-slate-500 mt-1">Unique daily dispatches</p>
         </div>
@@ -318,10 +357,10 @@ export const AdminRemindersView: React.FC = () => {
             <AlertCircle className="w-4 h-4 text-rose-500" />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
-            {metrics.remindersFailed + metrics.missingEmailCount}
+            {activeMetrics.remindersFailed + activeMetrics.missingEmailCount}
           </div>
           <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">
-            {metrics.missingEmailCount} missing emails, {metrics.remindersFailed} failed
+            {activeMetrics.missingEmailCount} missing emails, {activeMetrics.remindersFailed} failed
           </p>
         </div>
       </div>
@@ -339,7 +378,7 @@ export const AdminRemindersView: React.FC = () => {
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              All Managers ({overview.length})
+              All Staff ({activeOverview.length})
             </button>
             <button
               onClick={() => setActiveFilter('PENDING')}
@@ -349,7 +388,7 @@ export const AdminRemindersView: React.FC = () => {
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Pending Reports Only ({metrics.pendingCount})
+              Pending Reports Only ({activeMetrics.pendingCount})
             </button>
             <button
               onClick={() => setActiveFilter('SENT')}
@@ -359,7 +398,7 @@ export const AdminRemindersView: React.FC = () => {
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Emails Sent ({metrics.remindersSent})
+              Emails Sent ({activeMetrics.remindersSent})
             </button>
             <button
               onClick={() => setActiveFilter('FAILED')}
@@ -369,7 +408,7 @@ export const AdminRemindersView: React.FC = () => {
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Failed ({metrics.remindersFailed})
+              Failed ({activeMetrics.remindersFailed})
             </button>
           </div>
 
@@ -391,7 +430,7 @@ export const AdminRemindersView: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search manager, dept, email..."
+                placeholder="Search staff, dept, email..."
                 className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-red-500"
               />
             </div>
@@ -412,7 +451,7 @@ export const AdminRemindersView: React.FC = () => {
             </span>
           </div>
           <span className="text-xs text-slate-500">
-            Showing {filteredOverview.length} of {overview.length} managers
+            Showing {filteredOverview.length} of {activeOverview.length} staff
           </span>
         </div>
 

@@ -55,7 +55,15 @@ export function calculateEmployeeAnalytics(
   range: AnalyticsDateRange = '14D',
   referenceDate: string = new Date().toISOString().slice(0, 10)
 ): EmployeeAnalytics {
-  const staff = staffList.find(s => s.id === staffId) || staffList[0];
+  const staff: StaffMember = staffList.find(s => s.id === staffId) || staffList[0] || {
+    sNo: 0,
+    id: staffId || 'staff-fallback',
+    name: 'Staff Member',
+    department: 'General',
+    designation: 'Staff',
+    email: '',
+    defaultKpis: []
+  };
   const dateList = getDateListForRange(referenceDate, range);
   const totalDaysTracked = range === 'ALL' ? Math.max(1, new Set(allReports.map(r => r.date)).size) : dateList.length;
 

@@ -461,7 +461,20 @@ Caribbean University College of Medicine (CUCOM)`;
               {filteredStaff.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-12 text-center text-slate-500 text-xs">
-                    No staff records match your current filter criteria.
+                    <div className="space-y-3">
+                      <p className="font-semibold text-slate-700 dark:text-slate-300">
+                        {filteredStaffList.length === 0 ? 'No staff accounts created yet.' : 'No staff records match your current filter criteria.'}
+                      </p>
+                      {filteredStaffList.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveView('USERS')}
+                          className="px-4 py-2 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                        >
+                          + Create Staff Account in Staff &amp; User Authority
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
