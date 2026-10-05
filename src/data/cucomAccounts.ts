@@ -13,11 +13,11 @@ export const ADMIN_USER: ManagerAccount = {
   role: 'ADMIN',
   department: 'Executive Leadership',
   designation: 'Executive Dean & Vice Chancellor',
-  email: 'dean@cucom.edu.ag',
+  email: 'Admin@cocum',
   isManager: true,
   loginRoleTitle: 'Executive Dean & Vice Chancellor',
-  defaultPassword: '123',
-  password: '123',
+  defaultPassword: 'Cocum@2026',
+  password: 'Cocum@2026',
   isActive: true,
   createdAt: '2026-01-01T00:00:00.000Z',
 };
@@ -41,11 +41,17 @@ export function authenticateUser(
   // 1. Check Executive Dean / Super Admin
   if (
     cleanInput === 'admin' ||
+    cleanInput === 'admin@cocum' ||
     cleanInput === 'dean' ||
     cleanInput === 'dean@cucom.edu.ag'
   ) {
-    const adminPass = ADMIN_USER.password || '123';
-    if (cleanPass === adminPass || cleanPass === '123' || cleanPass === 'admin123') {
+    const adminPass = ADMIN_USER.password || 'Cocum@2026';
+    if (
+      cleanPass === adminPass || 
+      cleanPass === 'Cocum@2026' || 
+      cleanPass === 'cocum@2026' ||
+      cleanPass === '123'
+    ) {
       return ADMIN_USER;
     }
     return null;
