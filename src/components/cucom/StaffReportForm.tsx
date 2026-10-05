@@ -56,7 +56,7 @@ export const StaffReportForm: React.FC = () => {
       name: currentUser?.name || 'Administrator (Preview Mode)',
       department: currentUser?.department || 'Executive Leadership',
       designation: currentUser?.designation || 'Administrator',
-      email: currentUser?.email || 'admin@cucom.edu.ag',
+      email: currentUser?.email || 'Admin@cocum',
       defaultKpis: [],
       isActive: true
     };

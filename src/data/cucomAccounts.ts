@@ -9,7 +9,7 @@ export interface ManagerAccount extends UserAccount {
 export const ADMIN_USER: ManagerAccount = {
   id: 'admin-1',
   name: "Executive Administration (Dean's Office)",
-  username: 'admin',
+  username: 'Admin@cocum',
   role: 'ADMIN',
   department: 'Executive Leadership',
   designation: 'Executive Dean & Vice Chancellor',
@@ -38,20 +38,12 @@ export function authenticateUser(
   const cleanInput = usernameOrEmail.trim().toLowerCase();
   const cleanPass = passwordInput.trim();
 
-  // 1. Check Executive Dean / Super Admin
+  // 1. Check Executive Dean / Super Admin (Strictly Admin@cocum and Cocum@2026)
   if (
-    cleanInput === 'admin' ||
     cleanInput === 'admin@cocum' ||
-    cleanInput === 'dean' ||
-    cleanInput === 'dean@cucom.edu.ag'
+    cleanInput === 'admin'
   ) {
-    const adminPass = ADMIN_USER.password || 'Cocum@2026';
-    if (
-      cleanPass === adminPass || 
-      cleanPass === 'Cocum@2026' || 
-      cleanPass === 'cocum@2026' ||
-      cleanPass === '123'
-    ) {
+    if (cleanPass === 'Cocum@2026') {
       return ADMIN_USER;
     }
     return null;
