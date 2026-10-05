@@ -5,8 +5,16 @@ export type ComplianceStatus = 'SUBMITTED ON TIME' | 'LATE' | 'NOT SUBMITTED';
 export type PriorityLevel = 'Normal' | 'Urgent';
 export type SyncStatus = 'CLOUD_SYNCED' | 'LOCAL_ACTIVE';
 export type StaffScope = 'ALL_25' | 'ALL_35' | 'CORE_18';
-export type UserRole = 'ADMIN' | 'STAFF';
+export type UserRole = 'ADMIN' | 'STAFF' | 'SECTION_MANAGER';
 export type ThemeMode = 'light' | 'dark';
+
+export interface ReportAttachment {
+  name: string;
+  url: string;
+  size?: number;
+  type?: string;
+  uploadedAt?: string;
+}
 
 export interface UserAccount {
   id: string;
@@ -67,7 +75,9 @@ export interface DailyReport {
   unusualActivityType?: string; // Type of unusual activity (e.g. Unwanted incident, extra unscheduled duty, security issue)
   unusualActivitiesDetails?: string; // Detailed description of unusual, extra or unwanted activities
   tasks: TaskEntry[];
+  attachments?: ReportAttachment[];
   overallStatus: TaskStatus;
+  userId?: string;
   supportNeeded: boolean;
   supportDetails: string;
   challengeBlocker: string;

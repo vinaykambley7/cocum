@@ -126,7 +126,7 @@ export const AdminUserManagementView: React.FC = () => {
     setIsCreateModalOpen(true);
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedbackMsg(null);
 
@@ -142,11 +142,11 @@ export const AdminUserManagementView: React.FC = () => {
       return;
     }
 
-    const res = createUser({
+    const res = await createUser({
       name: createForm.name,
       username: createForm.username,
       email: createForm.email,
-      password: createForm.password || '123',
+      password: createForm.password || 'Cocum@2026',
       department: finalDept,
       designation: finalRole,
     });
@@ -183,18 +183,18 @@ export const AdminUserManagementView: React.FC = () => {
     setIsEditModalOpen(true);
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
 
     const finalDept = editForm.isCustomDept ? editForm.customDept.trim() : editForm.department;
     const finalRole = editForm.isCustomRole ? editForm.customRole.trim() : editForm.designation;
 
-    const res = updateUser(editingUser.id, {
+    const res = await updateUser(editingUser.id, {
       name: editForm.name.trim(),
       username: editForm.username.trim().toLowerCase(),
       email: editForm.email.trim().toLowerCase(),
-      password: editForm.password.trim() || '123',
+      password: editForm.password.trim() || 'Cocum@2026',
       department: finalDept,
       designation: finalRole,
       isActive: editForm.isActive,
@@ -202,16 +202,16 @@ export const AdminUserManagementView: React.FC = () => {
 
     if (res.success) {
       setIsEditModalOpen(false);
-      setFeedbackMsg({ type: 'success', text: `Updated '${editForm.name}' successfully!` });
+      setFeedbackMsg({ type: 'success', text: `Updated '${editForm.name}' successfully in Supabase!` });
       setTimeout(() => setFeedbackMsg(null), 4000);
     } else {
       setFeedbackMsg({ type: 'error', text: res.message });
     }
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!deletingUser) return;
-    deleteUser(deletingUser.id);
+    await deleteUser(deletingUser.id);
     setIsDeleteModalOpen(false);
     setFeedbackMsg({ type: 'success', text: `User '${deletingUser.name}' removed from portal authority.` });
     setTimeout(() => setFeedbackMsg(null), 4000);

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useCUCOM } from '../../context/CUCOMContext';
-import { DailyReport, TaskEntry, TaskStatus, PriorityLevel, StaffMember } from '../../types/cucom';
+import { DailyReport, TaskEntry, TaskStatus, PriorityLevel, StaffMember, ReportAttachment } from '../../types/cucom';
 import { exportReportToPDF } from '../../utils/cucomExport';
+import { uploadReportAttachment } from '../../services/cucomSync';
 import { 
   Send, 
   Save, 
@@ -28,7 +29,12 @@ import {
   ListChecks,
   Activity,
   Flame,
-  Info
+  Info,
+  Paperclip,
+  UploadCloud,
+  File,
+  ExternalLink,
+  Loader2
 } from 'lucide-react';
 
 export const StaffReportForm: React.FC = () => {
@@ -67,6 +73,8 @@ export const StaffReportForm: React.FC = () => {
 
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [justSubmitted, setJustSubmitted] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
 
   useEffect(() => {
     if (activeStaff && activeStaff.id) {
@@ -78,6 +86,39 @@ export const StaffReportForm: React.FC = () => {
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4500);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    setIsUploading(true);
+    try {
+      const res = await uploadReportAttachment(file, `reports/${selectedDate}`);
+      if (res.success && res.attachment) {
+        setReport(prev => ({
+          ...prev,
+          attachments: [...(prev.attachments || []), res.attachment!]
+        }));
+        showToast(`Document "${file.name}" uploaded to cloud storage successfully!`, 'success');
+      } else {
+        showToast(res.error || 'Failed to upload document to cloud storage.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'File upload failed.', 'error');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const removeAttachment = (attachmentUrl: string) => {
+    setReport(prev => ({
+      ...prev,
+      attachments: (prev.attachments || []).filter(a => a.url !== attachmentUrl)
+    }));
+    showToast('Attachment removed.', 'info');
   };
 
   const updateTask = (taskId: string, field: keyof TaskEntry, value: any) => {
@@ -108,25 +149,46 @@ export const StaffReportForm: React.FC = () => {
     }));
   };
 
-  const handleSaveDraft = () => {
-    saveReport({ ...report, isDraft: true }, false);
-    showToast('Report draft saved successfully.', 'info');
+  const handleSaveDraft = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await saveReport({ ...report, isDraft: true }, false);
+      if (res.success) {
+        showToast('Report draft saved to Supabase Cloud.', 'info');
+      } else {
+        showToast(`Draft saved locally. Supabase note: ${res.error || 'Offline'}`, 'info');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
+    setIsSubmitting(true);
     const now = new Date();
     const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     const isLate = checkIsLate(report.date, formattedTime);
 
-    saveReport(report, true);
-    setJustSubmitted(true);
+    try {
+      const res = await saveReport(report, true);
+      setJustSubmitted(true);
 
-    if (isLate) {
-      showToast(`Report submitted at ${formattedTime} (Marked LATE - daily deadline is ${deadlineFormatted})`, 'error');
-    } else {
-      showToast(`Daily report submitted on time at ${formattedTime}! Saved to central database.`, 'success');
+      if (res.success) {
+        if (isLate) {
+          showToast(`Report submitted at ${formattedTime} (Marked LATE - daily deadline is ${deadlineFormatted}). Saved to Supabase.`, 'error');
+        } else {
+          showToast(`Daily report submitted on time at ${formattedTime}! Saved permanently to Supabase Cloud.`, 'success');
+        }
+      } else {
+        showToast(`Report saved locally. Cloud sync message: ${res.error || 'Check network'}`, 'info');
+      }
+    } catch (err: any) {
+      showToast('Error saving report: ' + err.message, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -677,7 +739,102 @@ export const StaffReportForm: React.FC = () => {
           </div>
         </div>
 
-        {/* 7. Executive Dean Review & Remarks */}
+        {/* 7. Supporting Documents & File Attachments (Supabase Cloud Storage) */}
+        <div className="bg-white dark:bg-[#111827] rounded-3xl shadow-xs border border-slate-200/90 dark:border-slate-800 border-l-4 border-l-red-600 overflow-hidden">
+          <div className="px-6 py-4 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-extrabold text-sm uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-2">
+                <Paperclip className="w-4 h-4 text-red-600 dark:text-red-400" />
+                <span>7. Supporting Documents &amp; File Attachments</span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Upload receipts, score sheets, incident photos, rosters, or compliance verification documents (Max 10MB each).
+              </p>
+            </div>
+            
+            {/* Upload Button */}
+            <div>
+              <label className={`px-4 py-2 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 font-bold text-xs flex items-center gap-2 shadow-xs transition cursor-pointer ${
+                isUploading ? 'opacity-60 cursor-not-allowed' : ''
+              }`}>
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Uploading to Supabase...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Attach Document</span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                  className="hidden"
+                  accept="image/png,image/jpeg,image/webp,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {report.attachments && report.attachments.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {report.attachments.map((att, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="p-2 rounded-xl bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 shrink-0">
+                        <File className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-800 dark:text-slate-200 truncate" title={att.name}>
+                          {att.name}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {att.size ? `${(att.size / 1024).toFixed(1)} KB` : 'Attached'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <a
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+                        title="View / Download Document"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(att.url)}
+                        className="p-1.5 rounded-xl hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 transition cursor-pointer"
+                        title="Remove Document"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-6 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
+                <Paperclip className="w-6 h-6 text-slate-400 mx-auto" />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  No attachments added yet. Upload files to verify cash deposits, meeting notes, receipts, or incident reports.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 8. Executive Dean Review & Remarks */}
         <div className="bg-white dark:bg-[#111827] rounded-3xl shadow-xs border border-slate-200/90 dark:border-slate-800 overflow-hidden">
           <div className="px-6 py-3.5 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">
             <div className="flex items-center gap-2">
@@ -716,8 +873,9 @@ export const StaffReportForm: React.FC = () => {
           <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
             <button
               type="button"
+              disabled={isSubmitting || isUploading}
               onClick={handleSaveDraft}
-              className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
+              className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
             >
               <Save className="w-4 h-4" />
               <span>Save Draft</span>
@@ -725,10 +883,20 @@ export const StaffReportForm: React.FC = () => {
 
             <button
               type="submit"
-              className="flex-1 sm:flex-initial px-8 py-3 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-700 hover:to-rose-800 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition cursor-pointer active:scale-[0.99]"
+              disabled={isSubmitting || isUploading}
+              className="flex-1 sm:flex-initial px-8 py-3 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-700 hover:to-rose-800 disabled:opacity-50 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition cursor-pointer active:scale-[0.99]"
             >
-              <Send className="w-4 h-4" />
-              <span>{isAlreadySubmitted ? 'Update & Resubmit' : 'Submit Daily Report'}</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Submitting to Supabase...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  <span>{isAlreadySubmitted ? 'Update & Resubmit' : 'Submit Daily Report'}</span>
+                </>
+              )}
             </button>
           </div>
         </div>

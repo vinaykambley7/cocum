@@ -26,7 +26,10 @@ import {
   FileText,
   DollarSign,
   ShieldAlert,
-  ListChecks
+  ListChecks,
+  Paperclip,
+  ExternalLink,
+  File
 } from 'lucide-react';
 
 export const ManagementDashboard: React.FC = () => {
@@ -781,6 +784,35 @@ Caribbean University College of Medicine (CUCOM)`;
                     : 'Zero unusual, unwanted, or emergency activities reported for this shift.'}
                 </p>
               </div>
+
+              {/* Supporting Document Attachments */}
+              {activeReportDrawer.attachments && activeReportDrawer.attachments.length > 0 && (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                  <div className="font-bold text-slate-900 dark:text-white uppercase text-[11px] flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                    <span>Attached Supporting Documents ({activeReportDrawer.attachments.length})</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {activeReportDrawer.attachments.map((att, idx) => (
+                      <a
+                        key={idx}
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-red-500 transition flex items-center justify-between text-xs group"
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <File className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                          <span className="font-bold text-slate-800 dark:text-slate-200 truncate group-hover:text-red-600 transition" title={att.name}>
+                            {att.name}
+                          </span>
+                        </div>
+                        <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-red-600 shrink-0" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* 6. Priority for Tomorrow */}
               {activeReportDrawer.priorityTomorrow && (

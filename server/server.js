@@ -182,6 +182,80 @@ app.post('/api/reminders/trigger', async (req, res) => {
   }
 });
 
+// 5. Admin Supabase User Provisioning
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+
+const supabaseAdmin = (process.env.VITE_SUPABASE_URL || 'https://zvzjdmqlrxduapvqoeke.supabase.co') && process.env.SUPABASE_SERVICE_ROLE_KEY
+  ? createSupabaseClient(process.env.VITE_SUPABASE_URL || 'https://zvzjdmqlrxduapvqoeke.supabase.co', process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+  : null;
+
+app.post('/api/admin/create-user', async (req, res) => {
+  try {
+    const { name, username, email, password, department, designation, role } = req.body;
+    if (!name || !username || !department) {
+      return res.status(400).json({ success: false, error: 'Name, username, and department are required' });
+    }
+
+    if (!supabaseAdmin) {
+      return res.status(500).json({ success: false, error: 'Supabase admin service key is not configured' });
+    }
+
+    const cleanEmail = email && email.includes('@') ? email.trim().toLowerCase() : `${username.trim().toLowerCase()}@cucom.edu.ag`;
+    const cleanPass = password || 'Cocum@2026';
+
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: cleanEmail,
+      password: cleanPass,
+      email_confirm: true,
+      user_metadata: {
+        name,
+        username,
+        department,
+        designation,
+        role: role || 'STAFF'
+      }
+    });
+
+    if (error) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+
+    // Upsert into profiles
+    try {
+      await supabaseAdmin.from('profiles').upsert({
+        id: data.user.id,
+        name,
+        username,
+        email: cleanEmail,
+        role: role || 'STAFF',
+        department,
+        designation,
+        staff_id: `staff-${data.user.id.substring(0, 6)}`,
+        is_active: true
+      }, { onConflict: 'id' });
+    } catch (e) {
+      console.warn('Profile upsert note (schema may not be run yet):', e.message);
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: data.user.id,
+        name,
+        username,
+        email: cleanEmail,
+        department,
+        designation,
+        role: role || 'STAFF'
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Start Background Cron Scheduler
 startReminderCronJob();
 

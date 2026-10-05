@@ -9,7 +9,8 @@ import {
   Clock, 
   Sun, 
   Moon, 
-  ShieldCheck 
+  ShieldCheck,
+  Loader2 
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
@@ -18,8 +19,9 @@ export const LoginPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -40,9 +42,16 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    const success = login(username, password);
-    if (!success) {
-      setError('Invalid username or password. Please verify your credentials or contact IT administration.');
+    setIsLoading(true);
+    try {
+      const res = await login(username, password);
+      if (!res.success) {
+        setError(res.message || 'Invalid username or password. Please verify your credentials or contact IT administration.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Authentication error. Please check your network connection.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -163,10 +172,20 @@ export const LoginPage: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-700 hover:to-rose-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition cursor-pointer active:scale-[0.99] mt-2"
+                disabled={isLoading}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-700 hover:to-rose-800 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 transition cursor-pointer active:scale-[0.99] mt-2"
               >
-                <span>Sign In to Portal</span>
-                <ArrowRight className="w-4 h-4" />
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Signing in with Supabase...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign In to Portal</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
           </div>

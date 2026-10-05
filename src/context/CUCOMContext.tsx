@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { StaffMember, DailyReport, DashboardMetrics, ComplianceStatus, TaskStatus, SyncStatus, StaffScope, UserAccount, ActiveView, ThemeMode } from '../types/cucom';
+import { StaffMember, DailyReport, DashboardMetrics, ComplianceStatus, TaskStatus, SyncStatus, StaffScope, UserAccount, ActiveView, ThemeMode, UserRole } from '../types/cucom';
 import { DEFAULT_DEPARTMENTS, DEFAULT_DESIGNATIONS, createEmptyReport, getInitialDemoReports } from '../data/cucomCatalog';
 import { ADMIN_USER, authenticateUser } from '../data/cucomAccounts';
 import { 
@@ -8,10 +8,12 @@ import {
   broadcastReportUpdate, 
   onBroadcastUpdate, 
   fetchReportsFromSupabase,
-  syncUserToCloud,
-  fetchUsersFromCloud,
-  deleteUserFromCloud
+  syncProfileToCloud,
+  fetchProfilesFromCloud,
+  deleteProfileFromCloud,
+  deleteReportFromCloud
 } from '../services/cucomSync';
+import { supabase } from '../services/supabaseClient';
 import { generateHistoricalReports } from '../services/cucomAnalytics';
 
 interface CUCOMContextType {
@@ -34,9 +36,9 @@ interface CUCOMContextType {
   theme: ThemeMode;
   isMobileNavOpen: boolean;
   
-  login: (usernameOrEmail: string, password: string) => boolean;
+  login: (usernameOrEmail: string, password: string) => Promise<{ success: boolean; message?: string }>;
   quickLoginAs: (user: UserAccount) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   
   // Admin User Authority methods
   createUser: (data: {
@@ -46,9 +48,9 @@ interface CUCOMContextType {
     password?: string;
     department: string;
     designation: string;
-  }) => { success: boolean; message: string; user?: UserAccount };
-  updateUser: (userId: string, updates: Partial<UserAccount>) => { success: boolean; message: string };
-  deleteUser: (userId: string) => { success: boolean; message: string };
+  }) => Promise<{ success: boolean; message: string; user?: UserAccount }>;
+  updateUser: (userId: string, updates: Partial<UserAccount>) => Promise<{ success: boolean; message: string }>;
+  deleteUser: (userId: string) => Promise<{ success: boolean; message: string }>;
   addDepartment: (deptName: string) => void;
   addDesignation: (roleName: string) => void;
   
@@ -64,9 +66,9 @@ interface CUCOMContextType {
   setTheme: (mode: ThemeMode) => void;
   
   getReportForStaff: (staffId: string, date: string) => DailyReport;
-  saveReport: (report: DailyReport, isSubmit?: boolean) => void;
-  reviewReport: (reportId: string, reviewText: string, reviewerName?: string) => void;
-  deleteReport: (reportId: string) => void;
+  saveReport: (report: DailyReport, isSubmit?: boolean) => Promise<{ success: boolean; error?: string }>;
+  reviewReport: (reportId: string, reviewText: string, reviewerName?: string) => Promise<void>;
+  deleteReport: (reportId: string) => Promise<{ success: boolean; error?: string }>;
   getMetricsForDate: (date: string) => DashboardMetrics;
   resetToDemoData: () => void;
   checkIsLate: (submissionDate: string, submissionTimeStr: string) => boolean;
@@ -249,8 +251,13 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const filteredStaffList = useMemo(() => {
-    return staffList;
-  }, [staffList]);
+    if (!currentUser) return staffList;
+    if (currentUser.role === 'ADMIN') return staffList;
+    // Section User / Manager: strictly isolate to their own assigned department
+    const userDept = (currentUser.department || '').trim().toLowerCase();
+    const deptStaff = staffList.filter(s => (s.department || '').trim().toLowerCase() === userDept);
+    return deptStaff.length > 0 ? deptStaff : staffList.filter(s => s.id === currentUser.staffId);
+  }, [staffList, currentUser]);
 
   // Dynamic Suggestion Helpers
   const addDepartment = useCallback((deptName: string) => {
@@ -279,19 +286,102 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
+  // Helper to resolve user profile from Supabase Auth or DB profiles
+  const resolveUserProfile = useCallback(async (authUser: any): Promise<UserAccount> => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+
+      if (data && !error) {
+        return {
+          id: data.id,
+          name: data.name,
+          username: data.username,
+          role: data.role as UserRole,
+          department: data.department,
+          designation: data.designation,
+          email: data.email,
+          staffId: data.staff_id || data.id,
+          isActive: data.is_active !== false,
+          createdAt: data.created_at
+        };
+      }
+    } catch (e) {
+      console.warn('Profiles fetch note:', e);
+    }
+
+    const meta = authUser.user_metadata || {};
+    const emailLower = (authUser.email || '').toLowerCase();
+    const isSuperAdmin = 
+      emailLower === 'admin@cocum.edu.ag' || 
+      emailLower === 'admin@cocum' ||
+      meta.role === 'ADMIN' || 
+      meta.username?.toLowerCase() === 'admin@cocum';
+
+    return {
+      id: authUser.id,
+      name: meta.name || (isSuperAdmin ? "Executive Administration (Dean's Office)" : (authUser.email || 'Staff').split('@')[0]),
+      username: meta.username || (isSuperAdmin ? 'Admin@cocum' : (authUser.email || 'staff').split('@')[0]),
+      role: isSuperAdmin ? 'ADMIN' : (meta.role || 'STAFF'),
+      department: meta.department || (isSuperAdmin ? 'Executive Leadership' : 'Department of Clinical Medicine'),
+      designation: meta.designation || (isSuperAdmin ? 'Executive Dean & Vice Chancellor' : 'Staff Member'),
+      email: authUser.email || '',
+      staffId: meta.staff_id || authUser.id,
+      isActive: true,
+      createdAt: authUser.created_at
+    };
+  }, []);
+
+  // Supabase Auth Session Initialization & Realtime Auth Listener
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user && isMounted) {
+        resolveUserProfile(session.user).then(profile => {
+          if (isMounted) {
+            setCurrentUser(profile);
+            sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(profile));
+          }
+        });
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user && isMounted) {
+        const profile = await resolveUserProfile(session.user);
+        if (isMounted) {
+          setCurrentUser(profile);
+          sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(profile));
+        }
+      } else if (event === 'SIGNED_OUT' && isMounted) {
+        setCurrentUser(null);
+        sessionStorage.removeItem(AUTH_SESSION_KEY);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [resolveUserProfile]);
+
   // Admin User Authority: Create, Update, Delete
-  const createUser = useCallback((data: {
+  const createUser = useCallback(async (data: {
     name: string;
     username: string;
     email: string;
     password?: string;
     department: string;
     designation: string;
-  }) => {
+  }): Promise<{ success: boolean; message: string; user?: UserAccount }> => {
     const cleanName = data.name.trim();
     const cleanUsername = data.username.trim().toLowerCase().replace(/\s+/g, '.');
-    const cleanEmail = data.email.trim().toLowerCase();
-    const cleanPassword = data.password?.trim() || '123';
+    const cleanEmail = data.email.trim().toLowerCase() || `${cleanUsername}@cucom.edu.ag`;
+    const cleanPassword = data.password?.trim() || 'Cocum@2026';
     const cleanDept = data.department.trim();
     const cleanRole = data.designation.trim();
 
@@ -300,30 +390,62 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!cleanDept) return { success: false, message: 'Department is required.' };
     if (!cleanRole) return { success: false, message: 'Designation / Role is required.' };
 
-    const exists = users.some(
-      u => u.username.toLowerCase() === cleanUsername || (cleanEmail && u.email.toLowerCase() === cleanEmail)
-    );
-    if (exists || cleanUsername === 'admin') {
-      return { success: false, message: `Username '${cleanUsername}' or email already exists. Please choose a unique username.` };
+    let createdAccount: UserAccount | null = null;
+
+    // Try backend admin endpoint if available
+    try {
+      const resp = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cleanName,
+          username: cleanUsername,
+          email: cleanEmail,
+          password: cleanPassword,
+          department: cleanDept,
+          designation: cleanRole,
+          role: 'STAFF'
+        })
+      });
+      const resData = await resp.json();
+      if (resData.success && resData.user) {
+        createdAccount = {
+          id: resData.user.id,
+          name: cleanName,
+          username: cleanUsername,
+          role: 'STAFF',
+          staffId: `staff-${resData.user.id.substring(0, 6)}`,
+          department: cleanDept,
+          designation: cleanRole,
+          email: cleanEmail,
+          password: cleanPassword,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        };
+      }
+    } catch (e) {
+      console.warn('Backend admin create user endpoint unavailable, using local provision:', e);
     }
 
-    const staffId = `staff-${Date.now()}`;
-    const newUser: UserAccount = {
-      id: `user-${staffId}`,
-      name: cleanName,
-      username: cleanUsername,
-      role: 'STAFF',
-      staffId: staffId,
-      department: cleanDept,
-      designation: cleanRole,
-      email: cleanEmail || `${cleanUsername}@cucom.edu.ag`,
-      password: cleanPassword,
-      isActive: true,
-      createdAt: new Date().toISOString()
-    };
+    if (!createdAccount) {
+      const staffId = `staff-${Date.now()}`;
+      createdAccount = {
+        id: `user-${staffId}`,
+        name: cleanName,
+        username: cleanUsername,
+        role: 'STAFF',
+        staffId: staffId,
+        department: cleanDept,
+        designation: cleanRole,
+        email: cleanEmail,
+        password: cleanPassword,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      };
+    }
 
     setUsers(prev => {
-      const next = [...prev, newUser];
+      const next = [...prev.filter(u => u.username !== cleanUsername), createdAccount!];
       try {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(next));
       } catch (e) {}
@@ -333,13 +455,16 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addDepartment(cleanDept);
     addDesignation(cleanRole);
 
-    // Sync to Supabase cloud
-    syncUserToCloud(newUser).catch(err => console.warn('User cloud sync notice:', err));
+    syncProfileToCloud(createdAccount).catch(err => console.warn('User profile sync notice:', err));
 
-    return { success: true, message: `Candidate account '${cleanName}' created successfully!`, user: newUser };
-  }, [users, addDepartment, addDesignation]);
+    return { 
+      success: true, 
+      message: `Account '${cleanName}' created successfully!`, 
+      user: createdAccount 
+    };
+  }, [addDepartment, addDesignation]);
 
-  const updateUser = useCallback((userId: string, updates: Partial<UserAccount>) => {
+  const updateUser = useCallback(async (userId: string, updates: Partial<UserAccount>): Promise<{ success: boolean; message: string }> => {
     let updatedUser: UserAccount | null = null;
     setUsers(prev => {
       const next = prev.map(u => {
@@ -356,7 +481,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     if (updatedUser) {
-      syncUserToCloud(updatedUser).catch(err => console.warn('User cloud sync notice:', err));
+      syncProfileToCloud(updatedUser).catch(err => console.warn('User cloud sync notice:', err));
       if (currentUser?.id === userId) {
         setCurrentUser(updatedUser);
       }
@@ -367,7 +492,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return { success: false, message: 'User not found.' };
   }, [currentUser, addDepartment, addDesignation]);
 
-  const deleteUser = useCallback((userId: string) => {
+  const deleteUser = useCallback(async (userId: string): Promise<{ success: boolean; message: string }> => {
     setUsers(prev => {
       const next = prev.filter(u => u.id !== userId);
       try {
@@ -375,26 +500,63 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch (e) {}
       return next;
     });
-    deleteUserFromCloud(userId).catch(err => console.warn('User cloud delete notice:', err));
+    deleteProfileFromCloud(userId).catch(err => console.warn('User cloud delete notice:', err));
     return { success: true, message: 'User deleted successfully.' };
   }, []);
 
   // Auth Functions
-  const login = (usernameOrEmail: string, passwordInput: string): boolean => {
-    const user = authenticateUser(usernameOrEmail, passwordInput, users);
-    if (user) {
-      setCurrentUser(user);
-      try {
-        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(user));
-      } catch (e) {}
-      if (user.role === 'ADMIN') {
-        setActiveView('USERS');
-      } else {
-        setActiveView('REPORT');
-      }
-      return true;
+  const login = async (usernameOrEmail: string, passwordInput: string): Promise<{ success: boolean; message?: string }> => {
+    const cleanInput = usernameOrEmail.trim().toLowerCase();
+    const cleanPass = passwordInput.trim();
+
+    // Map admin and usernames to institutional Supabase email format
+    let authEmail = cleanInput;
+    if (cleanInput === 'admin@cocum' || cleanInput === 'admin') {
+      authEmail = 'admin@cocum.edu.ag';
+    } else if (!authEmail.includes('@')) {
+      authEmail = `${cleanInput}@cucom.edu.ag`;
     }
-    return false;
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: authEmail,
+        password: cleanPass
+      });
+
+      if (!error && data?.user) {
+        const profile = await resolveUserProfile(data.user);
+        setCurrentUser(profile);
+        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(profile));
+        if (profile.role === 'ADMIN') {
+          setActiveView('USERS');
+        } else {
+          setActiveView('REPORT');
+        }
+        return { success: true };
+      }
+
+      // Check local dynamic accounts as fallback
+      const localUser = authenticateUser(usernameOrEmail, passwordInput, users);
+      if (localUser) {
+        setCurrentUser(localUser);
+        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(localUser));
+        if (localUser.role === 'ADMIN') setActiveView('USERS');
+        else setActiveView('REPORT');
+        return { success: true };
+      }
+
+      return { success: false, message: error?.message || 'Invalid username or password.' };
+    } catch (err: any) {
+      const localUser = authenticateUser(usernameOrEmail, passwordInput, users);
+      if (localUser) {
+        setCurrentUser(localUser);
+        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(localUser));
+        if (localUser.role === 'ADMIN') setActiveView('USERS');
+        else setActiveView('REPORT');
+        return { success: true };
+      }
+      return { success: false, message: err?.message || 'Authentication failed' };
+    }
   };
 
   const quickLoginAs = (user: UserAccount) => {
@@ -409,7 +571,12 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Sign out note:', e);
+    }
     setCurrentUser(null);
     try {
       sessionStorage.removeItem(AUTH_SESSION_KEY);
@@ -466,14 +633,14 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {}
   }, []);
 
-  // Fetch Users from Cloud on Mount
+  // Fetch Profiles from Cloud on Mount
   useEffect(() => {
-    fetchUsersFromCloud().then(cloudUsers => {
-      if (cloudUsers && cloudUsers.length > 0) {
+    fetchProfilesFromCloud().then(cloudProfiles => {
+      if (cloudProfiles && cloudProfiles.length > 0) {
         setUsers(prev => {
           const map = new Map<string, UserAccount>();
           prev.forEach(u => map.set(u.id, u));
-          cloudUsers.forEach(u => map.set(u.id, u));
+          cloudProfiles.forEach(u => map.set(u.id, u));
           const merged = Array.from(map.values());
           try {
             localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
@@ -518,12 +685,12 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     // Central Supabase Database initial fetch
-    fetchReportsFromSupabase().then(cloudReports => {
-      if (cloudReports && cloudReports.length > 0) {
+    fetchReportsFromSupabase().then(res => {
+      if (res.success && res.reports && res.reports.length > 0) {
         setReports(prev => {
           const map = new Map<string, DailyReport>();
           prev.forEach(r => map.set(r.id, r));
-          cloudReports.forEach(r => map.set(r.id, r));
+          res.reports.forEach(r => map.set(r.id, r));
           return Array.from(map.values());
         });
         setSyncStatus('CLOUD_SYNCED');
@@ -651,17 +818,18 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [reports, staffList, deadlineFormatted, currentUser]
   );
 
-  const saveReport = (report: DailyReport, isSubmit: boolean = false) => {
+  const saveReport = async (report: DailyReport, isSubmit: boolean = false): Promise<{ success: boolean; error?: string }> => {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const isLate = checkIsLate(report.date, timeStr);
 
     const finalReport: DailyReport = {
       ...report,
+      userId: currentUser?.id || report.userId,
       isDraft: !isSubmit,
       submissionTime: isSubmit ? timeStr : report.submissionTime,
       submissionTimestamp: isSubmit ? now.toISOString() : report.submissionTimestamp,
-      complianceStatus: isSubmit ? (isLate ? 'LATE' : 'SUBMITTED ON TIME') : 'NOT SUBMITTED',
+      complianceStatus: isSubmit ? (isLate ? 'LATE' : 'SUBMITTED ON TIME') : (report.complianceStatus || 'NOT SUBMITTED'),
       deadline: deadlineFormatted,
       updatedAt: now.toISOString(),
     };
@@ -677,9 +845,10 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     broadcastReportUpdate(finalReport);
-    syncReportToCloud(finalReport).then(ok => {
-      if (ok) setSyncStatus('CLOUD_SYNCED');
-    });
+    const syncRes = await syncReportToCloud(finalReport, currentUser?.id);
+    if (syncRes.success) {
+      setSyncStatus('CLOUD_SYNCED');
+    }
 
     // Central SQLite Database API Sync
     fetch('/api/reports', {
@@ -687,9 +856,11 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(finalReport)
     }).catch(err => console.warn('Could not sync report to central DB API:', err));
+
+    return syncRes;
   };
 
-  const reviewReport = (reportId: string, reviewText: string, reviewerName: string = 'Dean / Management Office') => {
+  const reviewReport = async (reportId: string, reviewText: string, reviewerName: string = 'Dean / Management Office'): Promise<void> => {
     const now = new Date().toISOString();
     let updated: DailyReport | null = null;
 
@@ -711,12 +882,13 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (updated) {
       broadcastReportUpdate(updated);
-      syncReportToCloud(updated);
+      await syncReportToCloud(updated, currentUser?.id);
     }
   };
 
-  const deleteReport = (reportId: string) => {
+  const deleteReport = async (reportId: string): Promise<{ success: boolean; error?: string }> => {
     setReports(prev => prev.filter(r => r.id !== reportId));
+    return await deleteReportFromCloud(reportId);
   };
 
   const getMetricsForDate = useCallback((date: string): DashboardMetrics => {

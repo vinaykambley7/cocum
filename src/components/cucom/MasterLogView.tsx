@@ -20,7 +20,10 @@ import {
   AlertTriangle,
   ShieldAlert,
   ListChecks,
-  Award
+  Award,
+  Paperclip,
+  ExternalLink,
+  File
 } from 'lucide-react';
 
 export const MasterLogView: React.FC = () => {
@@ -30,10 +33,18 @@ export const MasterLogView: React.FC = () => {
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
 
-  // If regular manager/candidate, strictly isolate reports to their own submissions only
+  // If regular manager/staff, strictly isolate reports to their assigned section/department
   const userVisibleReports = isAdmin
     ? reports
-    : reports.filter(r => r.staffId === currentUser?.staffId || r.staffName === currentUser?.name);
+    : reports.filter(r => {
+        const userDept = (currentUser?.department || '').trim().toLowerCase();
+        const reportDept = (r.department || '').trim().toLowerCase();
+        return (
+          r.staffId === currentUser?.staffId ||
+          r.staffName === currentUser?.name ||
+          (userDept && reportDept === userDept)
+        );
+      });
 
   // Extract departments
   const departments = ['ALL', ...Array.from(new Set(filteredStaffList.map(s => s.department)))];
@@ -365,6 +376,35 @@ export const MasterLogView: React.FC = () => {
                                     : 'Zero unusual, unwanted, or emergency activities reported for this shift.'}
                                 </p>
                               </div>
+
+                              {/* Attachments Section if present */}
+                              {rep.attachments && rep.attachments.length > 0 && (
+                                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 space-y-2">
+                                  <div className="font-extrabold text-[11px] text-slate-900 dark:text-white uppercase flex items-center gap-1.5">
+                                    <Paperclip className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                                    <span>Verified Supporting Documents &amp; Attachments ({rep.attachments.length})</span>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-1">
+                                    {rep.attachments.map((att, attIdx) => (
+                                      <a
+                                        key={attIdx}
+                                        href={att.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-red-500 dark:hover:border-red-500 transition flex items-center justify-between gap-2 text-xs group"
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <File className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate group-hover:text-red-600 transition" title={att.name}>
+                                            {att.name}
+                                          </span>
+                                        </div>
+                                        <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-red-600 shrink-0" />
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
 
                               {/* 6. Tomorrow Priority & Dean Review */}
                               <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between text-xs gap-3">
