@@ -77,7 +77,7 @@ interface CUCOMContextType {
 const CUCOMContext = createContext<CUCOMContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'cucom_reports_data_v2';
-const USERS_STORAGE_KEY = 'cucom_admin_managed_users_v2';
+const USERS_STORAGE_KEY = 'cucom_admin_managed_users_v3';
 const DEPARTMENTS_STORAGE_KEY = 'cucom_departments_v2';
 const DESIGNATIONS_STORAGE_KEY = 'cucom_designations_v2';
 const AUTH_SESSION_KEY = 'cucom_auth_user_session_v2';
@@ -697,6 +697,30 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
+    // Central Supabase Profiles initial fetch (Admin & Dynamic Users)
+    fetchProfilesFromCloud().then(cloudUsers => {
+      setUsers(cloudUsers);
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(cloudUsers));
+      } catch (e) {}
+    });
+
+    // Realtime Supabase Profile changes listener
+    const profileChannel = supabase
+      .channel('public:profiles_live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        async () => {
+          const cloudUsers = await fetchProfilesFromCloud();
+          setUsers(cloudUsers);
+          try {
+            localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(cloudUsers));
+          } catch (e) {}
+        }
+      )
+      .subscribe();
+
     // Central SQLite Database initial fetch (local dev)
     fetch('/api/reports')
       .then(res => res.json())
@@ -748,6 +772,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => {
       unsubscribeBroadcast();
       if (unsubscribeCloud) unsubscribeCloud();
+      supabase.removeChannel(profileChannel);
     };
   }, []);
 
