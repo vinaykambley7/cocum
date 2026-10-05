@@ -52,7 +52,7 @@ export const AdminUserManagementView: React.FC = () => {
     name: '',
     username: '',
     email: '',
-    password: '123',
+    password: 'Cocum@2026',
     department: '',
     isCustomDept: false,
     customDept: '',
@@ -67,7 +67,7 @@ export const AdminUserManagementView: React.FC = () => {
     name: '',
     username: '',
     email: '',
-    password: '123',
+    password: 'Cocum@2026',
     department: '',
     isCustomDept: false,
     customDept: '',
@@ -77,9 +77,11 @@ export const AdminUserManagementView: React.FC = () => {
     isActive: true,
   });
 
-  // Filtered Users List
+  // Filtered Users List (Excludes Admin: only displays staff members created by Admin)
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
+      if (u.role === 'ADMIN') return false;
+
       const matchSearch = 
         u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -114,7 +116,7 @@ export const AdminUserManagementView: React.FC = () => {
       name: '',
       username: '',
       email: '',
-      password: '123',
+      password: 'Cocum@2026',
       department: departments[0] || 'Administration',
       isCustomDept: false,
       customDept: '',
@@ -170,7 +172,7 @@ export const AdminUserManagementView: React.FC = () => {
       name: user.name,
       username: user.username,
       email: user.email,
-      password: user.password || '123',
+      password: user.password || 'Cocum@2026',
       department: isCustomD ? '__CUSTOM__' : user.department,
       isCustomDept: isCustomD,
       customDept: isCustomD ? user.department : '',
@@ -218,7 +220,7 @@ export const AdminUserManagementView: React.FC = () => {
   };
 
   const handleCopyCredentials = (user: UserAccount) => {
-    const pass = user.password || '123';
+    const pass = user.password || 'Cocum@2026';
     const text = `CUCOM Daily Reporting Portal Credentials:\nName: ${user.name}\nUsername: ${user.username}\nEmail: ${user.email}\nPassword: ${pass}\nDepartment: ${user.department}\nRole: ${user.designation}`;
     navigator.clipboard.writeText(text);
     setCopiedId(user.id);
@@ -358,7 +360,7 @@ export const AdminUserManagementView: React.FC = () => {
                   : 'Try adjusting your search criteria or department filter.'}
               </p>
             </div>
-            {users.length === 0 && (
+            {filteredUsers.length === 0 && (
               <button
                 onClick={handleOpenCreateModal}
                 className="px-5 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs inline-flex items-center gap-2 shadow-md shadow-red-600/30 transition cursor-pointer"
@@ -384,7 +386,7 @@ export const AdminUserManagementView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                 {filteredUsers.map((user, idx) => {
-                  const pass = user.password || '123';
+                  const pass = user.password || 'Cocum@2026';
                   const isPassVisible = Boolean(showPasswordMap[user.id]);
                   const isCopied = copiedId === user.id;
 
@@ -558,7 +560,7 @@ export const AdminUserManagementView: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="Defaults to 123"
+                    placeholder="e.g. Cocum@2026"
                     value={createForm.password}
                     onChange={e => setCreateForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs focus:ring-2 focus:ring-red-600 focus:outline-none"
