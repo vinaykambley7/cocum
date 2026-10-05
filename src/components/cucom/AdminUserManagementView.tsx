@@ -77,11 +77,14 @@ export const AdminUserManagementView: React.FC = () => {
     isActive: true,
   });
 
-  // Filtered Users List (Excludes Admin: only displays staff members created by Admin)
-  const filteredUsers = useMemo(() => {
-    return users.filter(u => {
-      if (u.role === 'ADMIN') return false;
+  // Staff-only users list (strictly excludes Admin: Admin is the manager, not staff)
+  const staffOnlyUsers = useMemo(() => {
+    return users.filter(u => u.role !== 'ADMIN');
+  }, [users]);
 
+  // Filtered Users List
+  const filteredUsers = useMemo(() => {
+    return staffOnlyUsers.filter(u => {
       const matchSearch = 
         u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -92,7 +95,7 @@ export const AdminUserManagementView: React.FC = () => {
       const matchDept = selectedDept === 'ALL' || u.department === selectedDept;
       return matchSearch && matchDept;
     });
-  }, [users, searchTerm, selectedDept]);
+  }, [staffOnlyUsers, searchTerm, selectedDept]);
 
   // Auto-generate username from name
   const handleNameChange = (nameVal: string) => {
@@ -264,18 +267,18 @@ export const AdminUserManagementView: React.FC = () => {
         <div className="mt-6 pt-6 border-t border-white/15 grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-black/15 backdrop-blur-md rounded-2xl p-3 border border-white/10">
             <div className="text-rose-200 text-[11px] font-bold uppercase">Registered Staff</div>
-            <div className="text-2xl font-black mt-0.5">{users.length}</div>
+            <div className="text-2xl font-black mt-0.5">{staffOnlyUsers.length}</div>
           </div>
           <div className="bg-black/15 backdrop-blur-md rounded-2xl p-3 border border-white/10">
             <div className="text-rose-200 text-[11px] font-bold uppercase">Active Submitting</div>
             <div className="text-2xl font-black mt-0.5">
-              {users.filter(u => u.isActive !== false).length}
+              {staffOnlyUsers.filter(u => u.isActive !== false).length}
             </div>
           </div>
           <div className="bg-black/15 backdrop-blur-md rounded-2xl p-3 border border-white/10">
             <div className="text-rose-200 text-[11px] font-bold uppercase">Active Departments</div>
             <div className="text-2xl font-black mt-0.5">
-              {new Set(users.map(u => u.department)).size}
+              {new Set(staffOnlyUsers.map(u => u.department)).size}
             </div>
           </div>
           <div className="bg-black/15 backdrop-blur-md rounded-2xl p-3 border border-white/10">
@@ -352,10 +355,10 @@ export const AdminUserManagementView: React.FC = () => {
             </div>
             <div className="space-y-1">
               <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-                {users.length === 0 ? 'No Staff Accounts Created Yet' : 'No Matching Staff Found'}
+                {staffOnlyUsers.length === 0 ? 'No Staff Accounts Created Yet' : 'No Matching Staff Found'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
-                {users.length === 0
+                {staffOnlyUsers.length === 0
                   ? 'All previous static accounts have been cleared. As Admin, you have total authority to create candidate accounts with custom names, departments, roles, and passwords.'
                   : 'Try adjusting your search criteria or department filter.'}
               </p>
