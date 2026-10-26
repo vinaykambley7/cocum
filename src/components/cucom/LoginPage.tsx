@@ -93,7 +93,7 @@ export const LoginPage: React.FC = () => {
           </div>
           <div>
             <h1 className="text-lg sm:text-xl font-black tracking-wide uppercase text-slate-900 dark:text-white">
-              Commonwealth University College of Medicine
+              Commonwealth University College of Medicine (CUCOM)
             </h1>
             <p className="text-xs text-red-700 dark:text-red-400 font-bold max-w-sm mx-auto mt-0.5 uppercase tracking-wider">
               Daily Reporting System & Management Portal

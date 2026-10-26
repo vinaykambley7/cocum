@@ -316,19 +316,22 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const meta = authUser.user_metadata || {};
     const emailLower = (authUser.email || '').toLowerCase();
     const isSuperAdmin = 
+      emailLower === 'admin@cucom.edu.ag' || 
+      emailLower === 'admin@cucom' ||
       emailLower === 'admin@cocum.edu.ag' || 
       emailLower === 'admin@cocum' ||
       meta.role === 'ADMIN' || 
+      meta.username?.toLowerCase() === 'admin@cucom' ||
       meta.username?.toLowerCase() === 'admin@cocum';
 
     return {
       id: authUser.id,
       name: meta.name || (isSuperAdmin ? "Executive Administration (Dean's Office)" : (authUser.email || 'Staff').split('@')[0]),
-      username: meta.username || (isSuperAdmin ? 'Admin@cocum' : (authUser.email || 'staff').split('@')[0]),
+      username: meta.username || (isSuperAdmin ? 'Admin@cucom' : (authUser.email || 'staff').split('@')[0]),
       role: isSuperAdmin ? 'ADMIN' : (meta.role || 'STAFF'),
-      department: meta.department || (isSuperAdmin ? 'Executive Leadership' : 'Department of Clinical Medicine'),
-      designation: meta.designation || (isSuperAdmin ? 'Executive Dean & Vice Chancellor' : 'Staff Member'),
-      email: authUser.email || '',
+      department: meta.department || (isSuperAdmin ? 'Administration' : 'Department of Clinical Medicine'),
+      designation: meta.designation || (isSuperAdmin ? 'Executive Dean & Management' : 'Staff Member'),
+      email: authUser.email || (isSuperAdmin ? 'admin@cucom.edu.ag' : ''),
       staffId: meta.staff_id || authUser.id,
       isActive: true,
       createdAt: authUser.created_at
@@ -511,17 +514,30 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Map admin and usernames to institutional Supabase email format
     let authEmail = cleanInput;
-    if (cleanInput === 'admin@cocum' || cleanInput === 'admin') {
-      authEmail = 'admin@cocum.edu.ag';
+    if (cleanInput === 'admin@cucom' || cleanInput === 'admin@cocum' || cleanInput === 'admin') {
+      authEmail = 'admin@cucom.edu.ag';
     } else if (!authEmail.includes('@')) {
       authEmail = `${cleanInput}@cucom.edu.ag`;
     }
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      let { data, error } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password: cleanPass
       });
+
+      // Fallback for legacy admin email if primary fails
+      if (error && (cleanInput.includes('admin') || cleanInput.includes('cocum'))) {
+        const altEmail = authEmail === 'admin@cucom.edu.ag' ? 'admin@cocum.edu.ag' : 'admin@cucom.edu.ag';
+        const altRes = await supabase.auth.signInWithPassword({
+          email: altEmail,
+          password: cleanPass
+        });
+        if (!altRes.error && altRes.data?.user) {
+          data = altRes.data;
+          error = null;
+        }
+      }
 
       if (!error && data?.user) {
         const profile = await resolveUserProfile(data.user);

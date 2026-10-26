@@ -203,7 +203,7 @@ app.post('/api/admin/create-user', async (req, res) => {
     }
 
     const cleanEmail = email && email.includes('@') ? email.trim().toLowerCase() : `${username.trim().toLowerCase()}@cucom.edu.ag`;
-    const cleanPass = password || 'Cocum@2026';
+    const cleanPass = password || 'Cucom@2026';
 
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email: cleanEmail,

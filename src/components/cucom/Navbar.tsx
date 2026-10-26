@@ -112,8 +112,8 @@ export const Navbar: React.FC = () => {
                     PORTAL
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate max-w-[130px]">
-                  Commonwealth Univ.
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate max-w-[150px]" title="Commonwealth University College of Medicine (CUCOM)">
+                  College of Medicine
                 </p>
               </div>
             </div>

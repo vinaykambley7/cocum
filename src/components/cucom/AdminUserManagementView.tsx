@@ -52,7 +52,7 @@ export const AdminUserManagementView: React.FC = () => {
     name: '',
     username: '',
     email: '',
-    password: 'Cocum@2026',
+    password: 'Cucom@2026',
     department: '',
     isCustomDept: false,
     customDept: '',
@@ -67,7 +67,7 @@ export const AdminUserManagementView: React.FC = () => {
     name: '',
     username: '',
     email: '',
-    password: 'Cocum@2026',
+    password: 'Cucom@2026',
     department: '',
     isCustomDept: false,
     customDept: '',
@@ -119,7 +119,7 @@ export const AdminUserManagementView: React.FC = () => {
       name: '',
       username: '',
       email: '',
-      password: 'Cocum@2026',
+      password: 'Cucom@2026',
       department: departments[0] || 'Administration',
       isCustomDept: false,
       customDept: '',
@@ -151,7 +151,7 @@ export const AdminUserManagementView: React.FC = () => {
       name: createForm.name,
       username: createForm.username,
       email: createForm.email,
-      password: createForm.password || 'Cocum@2026',
+      password: createForm.password || 'Cucom@2026',
       department: finalDept,
       designation: finalRole,
     });
@@ -175,7 +175,7 @@ export const AdminUserManagementView: React.FC = () => {
       name: user.name,
       username: user.username,
       email: user.email,
-      password: user.password || 'Cocum@2026',
+      password: user.password || 'Cucom@2026',
       department: isCustomD ? '__CUSTOM__' : user.department,
       isCustomDept: isCustomD,
       customDept: isCustomD ? user.department : '',
@@ -199,7 +199,7 @@ export const AdminUserManagementView: React.FC = () => {
       name: editForm.name.trim(),
       username: editForm.username.trim().toLowerCase(),
       email: editForm.email.trim().toLowerCase(),
-      password: editForm.password.trim() || 'Cocum@2026',
+      password: editForm.password.trim() || 'Cucom@2026',
       department: finalDept,
       designation: finalRole,
       isActive: editForm.isActive,
@@ -223,7 +223,7 @@ export const AdminUserManagementView: React.FC = () => {
   };
 
   const handleCopyCredentials = (user: UserAccount) => {
-    const pass = user.password || 'Cocum@2026';
+    const pass = user.password || 'Cucom@2026';
     const text = `CUCOM Daily Reporting Portal Credentials:\nName: ${user.name}\nUsername: ${user.username}\nEmail: ${user.email}\nPassword: ${pass}\nDepartment: ${user.department}\nRole: ${user.designation}`;
     navigator.clipboard.writeText(text);
     setCopiedId(user.id);
@@ -389,7 +389,7 @@ export const AdminUserManagementView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                 {filteredUsers.map((user, idx) => {
-                  const pass = user.password || 'Cocum@2026';
+                  const pass = user.password || 'Cucom@2026';
                   const isPassVisible = Boolean(showPasswordMap[user.id]);
                   const isCopied = copiedId === user.id;
 
@@ -563,7 +563,7 @@ export const AdminUserManagementView: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Cocum@2026"
+                    placeholder="e.g. Cucom@2026"
                     value={createForm.password}
                     onChange={e => setCreateForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs focus:ring-2 focus:ring-red-600 focus:outline-none"

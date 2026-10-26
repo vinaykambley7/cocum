@@ -7,17 +7,17 @@ export interface ManagerAccount extends UserAccount {
 }
 
 export const ADMIN_USER: ManagerAccount = {
-  id: 'admin-1',
+  id: '3f528a63-664c-4662-aea8-b6e9776b5bbd',
   name: "Executive Administration (Dean's Office)",
-  username: 'Admin@cocum',
+  username: 'Admin@cucom',
   role: 'ADMIN',
-  department: 'Executive Leadership',
-  designation: 'Executive Dean & Vice Chancellor',
-  email: 'Admin@cocum',
+  department: 'Administration',
+  designation: 'Executive Dean & Management',
+  email: 'admin@cucom.edu.ag',
   isManager: true,
-  loginRoleTitle: 'Executive Dean & Vice Chancellor',
-  defaultPassword: 'Cocum@2026',
-  password: 'Cocum@2026',
+  loginRoleTitle: 'Executive Dean & Management',
+  defaultPassword: 'Cucom@2026',
+  password: 'Cucom@2026',
   isActive: true,
   createdAt: '2026-01-01T00:00:00.000Z',
 };
@@ -38,12 +38,15 @@ export function authenticateUser(
   const cleanInput = usernameOrEmail.trim().toLowerCase();
   const cleanPass = passwordInput.trim();
 
-  // 1. Check Executive Dean / Super Admin (Strictly Admin@cocum and Cocum@2026)
+  // 1. Check Executive Dean / Super Admin (Accepts Admin@cucom and Admin@cocum, Cucom@2026 and Cocum@2026)
   if (
+    cleanInput === 'admin@cucom' ||
+    cleanInput === 'admin@cucom.edu.ag' ||
     cleanInput === 'admin@cocum' ||
+    cleanInput === 'admin@cocum.edu.ag' ||
     cleanInput === 'admin'
   ) {
-    if (cleanPass === 'Cocum@2026') {
+    if (cleanPass === 'Cucom@2026' || cleanPass === 'Cocum@2026') {
       return ADMIN_USER;
     }
     return null;
