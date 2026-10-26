@@ -11,7 +11,10 @@ import {
   syncProfileToCloud,
   fetchProfilesFromCloud,
   deleteProfileFromCloud,
-  deleteReportFromCloud
+  deleteReportFromCloud,
+  adminProvisionUserCloud,
+  adminDeleteUserCloud,
+  adminUpdateUserCloud
 } from '../services/cucomSync';
 import { supabase } from '../services/supabaseClient';
 import { generateHistoricalReports } from '../services/cucomAnalytics';
@@ -384,7 +387,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const cleanName = data.name.trim();
     const cleanUsername = data.username.trim().toLowerCase().replace(/\s+/g, '.');
     const cleanEmail = data.email.trim().toLowerCase() || `${cleanUsername}@cucom.edu.ag`;
-    const cleanPassword = data.password?.trim() || 'Cocum@2026';
+    const cleanPassword = data.password?.trim() || 'Cucom@2026';
     const cleanDept = data.department.trim();
     const cleanRole = data.designation.trim();
 
@@ -393,62 +396,27 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!cleanDept) return { success: false, message: 'Department is required.' };
     if (!cleanRole) return { success: false, message: 'Designation / Role is required.' };
 
-    let createdAccount: UserAccount | null = null;
+    const cloudRes = await adminProvisionUserCloud({
+      name: cleanName,
+      username: cleanUsername,
+      email: cleanEmail,
+      password: cleanPassword,
+      department: cleanDept,
+      designation: cleanRole,
+      role: 'STAFF'
+    });
 
-    // Try backend admin endpoint if available
-    try {
-      const resp = await fetch('/api/admin/create-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: cleanName,
-          username: cleanUsername,
-          email: cleanEmail,
-          password: cleanPassword,
-          department: cleanDept,
-          designation: cleanRole,
-          role: 'STAFF'
-        })
-      });
-      const resData = await resp.json();
-      if (resData.success && resData.user) {
-        createdAccount = {
-          id: resData.user.id,
-          name: cleanName,
-          username: cleanUsername,
-          role: 'STAFF',
-          staffId: `staff-${resData.user.id.substring(0, 6)}`,
-          department: cleanDept,
-          designation: cleanRole,
-          email: cleanEmail,
-          password: cleanPassword,
-          isActive: true,
-          createdAt: new Date().toISOString()
-        };
-      }
-    } catch (e) {
-      console.warn('Backend admin create user endpoint unavailable, using local provision:', e);
-    }
-
-    if (!createdAccount) {
-      const staffId = `staff-${Date.now()}`;
-      createdAccount = {
-        id: `user-${staffId}`,
-        name: cleanName,
-        username: cleanUsername,
-        role: 'STAFF',
-        staffId: staffId,
-        department: cleanDept,
-        designation: cleanRole,
-        email: cleanEmail,
-        password: cleanPassword,
-        isActive: true,
-        createdAt: new Date().toISOString()
+    if (!cloudRes.success || !cloudRes.user) {
+      return {
+        success: false,
+        message: cloudRes.message || 'Failed to provision user in Supabase.'
       };
     }
 
+    const createdAccount = cloudRes.user;
+
     setUsers(prev => {
-      const next = [...prev.filter(u => u.username !== cleanUsername), createdAccount!];
+      const next = [...prev.filter(u => u.username !== cleanUsername && u.id !== createdAccount.id), createdAccount];
       try {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(next));
       } catch (e) {}
@@ -458,11 +426,9 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addDepartment(cleanDept);
     addDesignation(cleanRole);
 
-    syncProfileToCloud(createdAccount).catch(err => console.warn('User profile sync notice:', err));
-
     return { 
       success: true, 
-      message: `Account '${cleanName}' created successfully!`, 
+      message: `Account '${cleanName}' created successfully in cloud authentication!`, 
       user: createdAccount 
     };
   }, [addDepartment, addDesignation]);
@@ -484,7 +450,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     if (updatedUser) {
-      syncProfileToCloud(updatedUser).catch(err => console.warn('User cloud sync notice:', err));
+      adminUpdateUserCloud(userId, updates).catch(err => console.warn('User cloud update notice:', err));
       if (currentUser?.id === userId) {
         setCurrentUser(updatedUser);
       }
@@ -503,7 +469,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch (e) {}
       return next;
     });
-    deleteProfileFromCloud(userId).catch(err => console.warn('User cloud delete notice:', err));
+    adminDeleteUserCloud(userId).catch(err => console.warn('User cloud delete notice:', err));
     return { success: true, message: 'User deleted successfully.' };
   }, []);
 
@@ -512,12 +478,41 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const cleanInput = usernameOrEmail.trim().toLowerCase();
     const cleanPass = passwordInput.trim();
 
+    if (!cleanInput) return { success: false, message: 'Please enter your username or email.' };
+    if (!cleanPass) return { success: false, message: 'Please enter your password.' };
+
     // Map admin and usernames to institutional Supabase email format
     let authEmail = cleanInput;
     if (cleanInput === 'admin@cucom' || cleanInput === 'admin@cocum' || cleanInput === 'admin') {
       authEmail = 'admin@cucom.edu.ag';
-    } else if (!authEmail.includes('@')) {
-      authEmail = `${cleanInput}@cucom.edu.ag`;
+    } else {
+      // Query profiles table to find exact email corresponding to this username
+      try {
+        const { data: matchedProfile } = await supabase
+          .from('profiles')
+          .select('id, email, username, is_active')
+          .or(`username.ilike.${cleanInput},email.ilike.${cleanInput},staff_id.ilike.${cleanInput}`)
+          .maybeSingle();
+
+        if (matchedProfile) {
+          if (matchedProfile.is_active === false) {
+            return {
+              success: false,
+              message: 'This account has been deactivated. Please contact IT Administration.'
+            };
+          }
+          if (matchedProfile.email) {
+            authEmail = matchedProfile.email.toLowerCase();
+          }
+        } else if (!authEmail.includes('@')) {
+          authEmail = `${cleanInput}@cucom.edu.ag`;
+        }
+      } catch (e) {
+        console.warn('Profile lookup note during login:', e);
+        if (!authEmail.includes('@')) {
+          authEmail = `${cleanInput}@cucom.edu.ag`;
+        }
+      }
     }
 
     try {
@@ -561,7 +556,10 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return { success: true };
       }
 
-      return { success: false, message: error?.message || 'Invalid username or password.' };
+      return { 
+        success: false, 
+        message: 'Invalid username or password. Please verify your credentials or contact IT Administration.' 
+      };
     } catch (err: any) {
       const localUser = authenticateUser(usernameOrEmail, passwordInput, users);
       if (localUser) {
@@ -713,12 +711,31 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
+    // Helper to merge cloud profiles while preserving saved passwords
+    const mergeProfilesWithLocal = (prevUsers: UserAccount[], cloudUsers: UserAccount[]): UserAccount[] => {
+      const map = new Map<string, UserAccount>();
+      prevUsers.forEach(u => map.set(u.id, u));
+      cloudUsers.forEach(u => {
+        const existing = map.get(u.id);
+        map.set(u.id, {
+          ...u,
+          password: existing?.password || u.password || 'Cucom@2026'
+        });
+      });
+      return Array.from(map.values());
+    };
+
     // Central Supabase Profiles initial fetch (Admin & Dynamic Users)
     fetchProfilesFromCloud().then(cloudUsers => {
-      setUsers(cloudUsers);
-      try {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(cloudUsers));
-      } catch (e) {}
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers(prev => {
+          const merged = mergeProfilesWithLocal(prev, cloudUsers);
+          try {
+            localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
+      }
     });
 
     // Realtime Supabase Profile changes listener
@@ -729,10 +746,13 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         { event: '*', schema: 'public', table: 'profiles' },
         async () => {
           const cloudUsers = await fetchProfilesFromCloud();
-          setUsers(cloudUsers);
-          try {
-            localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(cloudUsers));
-          } catch (e) {}
+          setUsers(prev => {
+            const merged = mergeProfilesWithLocal(prev, cloudUsers);
+            try {
+              localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
+            } catch (e) {}
+            return merged;
+          });
         }
       )
       .subscribe();

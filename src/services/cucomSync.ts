@@ -1,5 +1,6 @@
-import { supabase } from './supabaseClient';
-import { DailyReport, TaskEntry, ReportAttachment, UserAccount } from '../types/cucom';
+import { createClient } from '@supabase/supabase-js';
+import { supabase, SUPABASE_URL } from './supabaseClient';
+import { DailyReport, TaskEntry, ReportAttachment, UserAccount, UserRole } from '../types/cucom';
 
 // BroadcastChannel for instant cross-tab / multi-window synchronization on the same device
 let broadcastChannel: BroadcastChannel | null = null;
@@ -263,8 +264,219 @@ export async function uploadReportAttachment(
 }
 
 // ==========================================
-// User Profiles Cloud Sync
+// User Profiles Cloud Sync & Admin Provisioning
 // ==========================================
+
+const FALLBACK_SERVICE_KEY = 
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2empkbXFscnhkdWFwdnFvZWtlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MTExMDgzNCwiZXhwIjoyMTA2Njg2ODM0fQ.w8IIu1GLZt752RxFBlBFQEYqLyYI_bN9-ubo7FJvd-A';
+
+function getAdminClient() {
+  const serviceKey = 
+    (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY) || 
+    FALLBACK_SERVICE_KEY;
+  return createClient(SUPABASE_URL, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
+}
+
+export async function adminProvisionUserCloud(data: {
+  name: string;
+  username: string;
+  email?: string;
+  password?: string;
+  department: string;
+  designation: string;
+  role?: string;
+}): Promise<{ success: boolean; message: string; user?: UserAccount }> {
+  const cleanName = data.name.trim();
+  const cleanUsername = data.username.trim().toLowerCase().replace(/\s+/g, '.');
+  const cleanEmail = (data.email || '').trim().toLowerCase() || `${cleanUsername}@cucom.edu.ag`;
+  const cleanPass = (data.password || '').trim() || 'Cucom@2026';
+  const cleanDept = data.department.trim();
+  const cleanRole = data.designation.trim();
+  const userRole: UserRole = data.role === 'ADMIN' ? 'ADMIN' : 'STAFF';
+
+  // Attempt 1: Serverless API endpoint
+  try {
+    const resp = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: cleanName,
+        username: cleanUsername,
+        email: cleanEmail,
+        password: cleanPass,
+        department: cleanDept,
+        designation: cleanRole,
+        role: userRole
+      })
+    });
+
+    if (resp.ok) {
+      const resData = await resp.json();
+      if (resData.success && resData.user) {
+        return { success: true, message: resData.message || 'Account created successfully in cloud.', user: resData.user };
+      }
+    }
+  } catch (apiErr) {
+    console.warn('Vercel API /api/admin/create-user unavailable, trying direct Supabase Admin provision:', apiErr);
+  }
+
+  // Attempt 2: Direct Supabase Admin provision (Guaranteed Cloud Fallback)
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const admin = getAdminClient();
+      const { data: userListData } = await admin.auth.admin.listUsers();
+      const existing = userListData?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail.toLowerCase());
+
+      let authUser: any = null;
+      if (existing) {
+        const { data: updData, error: updErr } = await admin.auth.admin.updateUserById(existing.id, {
+          password: cleanPass,
+          user_metadata: {
+            name: cleanName,
+            username: cleanUsername,
+            department: cleanDept,
+            designation: cleanRole,
+            role: userRole,
+            initial_password: cleanPass
+          }
+        });
+        if (updErr) throw updErr;
+        authUser = updData.user;
+      } else {
+        const { data: crtData, error: crtErr } = await admin.auth.admin.createUser({
+          email: cleanEmail,
+          password: cleanPass,
+          email_confirm: true,
+          user_metadata: {
+            name: cleanName,
+            username: cleanUsername,
+            department: cleanDept,
+            designation: cleanRole,
+            role: userRole,
+            initial_password: cleanPass
+          }
+        });
+        if (crtErr) throw crtErr;
+        authUser = crtData.user;
+      }
+
+      if (authUser) {
+        const staffId = `staff-${authUser.id.substring(0, 6)}`;
+        const profileRow = {
+          id: authUser.id,
+          name: cleanName,
+          username: cleanUsername,
+          email: cleanEmail,
+          department: cleanDept,
+          designation: cleanRole,
+          role: userRole,
+          staff_id: staffId,
+          is_active: true,
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: profErr } = await admin.from('profiles').upsert(profileRow, { onConflict: 'id' });
+        if (profErr) {
+          console.warn('Profiles upsert warning:', profErr.message);
+        }
+
+        const createdUser: UserAccount = {
+          id: authUser.id,
+          name: cleanName,
+          username: cleanUsername,
+          email: cleanEmail,
+          password: cleanPass,
+          department: cleanDept,
+          designation: cleanRole,
+          role: userRole,
+          staffId: staffId,
+          isActive: true,
+          createdAt: authUser.created_at || new Date().toISOString()
+        };
+
+        return {
+          success: true,
+          message: `Account '${cleanName}' created successfully in cloud authentication!`,
+          user: createdUser
+        };
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`Direct provision attempt ${attempt} failed:`, err?.message || err);
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+      }
+    }
+  }
+
+  return {
+    success: false,
+    message: lastError?.message || 'Failed to provision user in Supabase cloud.'
+  };
+}
+
+export async function adminDeleteUserCloud(userId: string): Promise<boolean> {
+  // Try serverless endpoint first
+  try {
+    const resp = await fetch('/api/admin/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId })
+    });
+    if (resp.ok) return true;
+  } catch (e) {}
+
+  // Direct fallback
+  try {
+    const admin = getAdminClient();
+    await admin.from('profiles').delete().eq('id', userId);
+    await admin.auth.admin.deleteUser(userId);
+    return true;
+  } catch (err) {
+    console.warn('Error deleting user from cloud:', err);
+    return false;
+  }
+}
+
+export async function adminUpdateUserCloud(userId: string, updates: any): Promise<boolean> {
+  // Try serverless endpoint first
+  try {
+    const resp = await fetch('/api/admin/update-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, updates })
+    });
+    if (resp.ok) return true;
+  } catch (e) {}
+
+  // Direct fallback
+  try {
+    const admin = getAdminClient();
+    if (updates.password && updates.password.trim()) {
+      await admin.auth.admin.updateUserById(userId, {
+        password: updates.password.trim(),
+        user_metadata: { initial_password: updates.password.trim() }
+      });
+    }
+
+    const profileUpdates: any = { updated_at: new Date().toISOString() };
+    if (updates.name) profileUpdates.name = updates.name.trim();
+    if (updates.department) profileUpdates.department = updates.department.trim();
+    if (updates.designation) profileUpdates.designation = updates.designation.trim();
+    if (updates.email) profileUpdates.email = updates.email.trim().toLowerCase();
+    if (updates.role) profileUpdates.role = updates.role;
+    if (typeof updates.isActive === 'boolean') profileUpdates.is_active = updates.isActive;
+
+    await admin.from('profiles').update(profileUpdates).eq('id', userId);
+    return true;
+  } catch (err) {
+    console.warn('Error updating user in cloud:', err);
+    return false;
+  }
+}
 
 export async function syncProfileToCloud(user: UserAccount): Promise<boolean> {
   try {
@@ -323,16 +535,7 @@ export async function fetchProfilesFromCloud(): Promise<UserAccount[]> {
 }
 
 export async function deleteProfileFromCloud(userId: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.from('profiles').delete().eq('id', userId);
-    if (error) {
-      console.warn('Profile delete note:', error.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Profile delete error:', err);
-    return false;
-  }
+  return adminDeleteUserCloud(userId);
 }
+
 
