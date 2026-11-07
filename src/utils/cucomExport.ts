@@ -20,7 +20,7 @@ export function exportDashboardToExcel(
   const dashboardRows: any[] = [
     ['CUCOM DAILY REPORTING SYSTEM - SUBMISSION DASHBOARD'],
     [`Report Date: ${date}`],
-    [`Submission Deadline: 5:00 PM Daily`],
+    [`Submission Deadline: 5:30 PM Daily`],
     [],
     ['SUMMARY METRICS'],
     ['Total Required Candidates', metrics.totalRequired],

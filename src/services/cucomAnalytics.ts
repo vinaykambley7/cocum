@@ -507,7 +507,7 @@ export function generateHistoricalReports(daysBack: number = 14, staffList: Staf
         staffName: staff.name,
         department: staff.department,
         designation: staff.designation,
-        deadline: '5:00 PM',
+        deadline: '5:30 PM',
         submissionTimestamp: `${reportDate}T${submissionHour}:${String(submissionMin).padStart(2, '0')}:00Z`,
         submissionTime,
         complianceStatus: complianceStatus as any,

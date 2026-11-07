@@ -24,6 +24,7 @@ export const PageHeader: React.FC = () => {
     setSelectedDate, 
     deadlineFormatted, 
     deadlineTime,
+    setDeadlineTime,
     isAdmin, 
     currentUser, 
     currentStaff,
@@ -167,6 +168,20 @@ export const PageHeader: React.FC = () => {
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             )}
             <span className="whitespace-nowrap">{deadlineStatus.text}</span>
+            {isAdmin && (
+              <select
+                value={deadlineTime}
+                onChange={e => setDeadlineTime(e.target.value)}
+                className="bg-transparent border-none text-[11px] font-extrabold focus:outline-none cursor-pointer ml-1 pl-1 border-l border-current/40 opacity-80 hover:opacity-100"
+                title="Change institutional reporting deadline"
+              >
+                <option value="17:30" className="text-slate-900 bg-white">5:30 PM (Default)</option>
+                <option value="17:00" className="text-slate-900 bg-white">5:00 PM</option>
+                <option value="18:00" className="text-slate-900 bg-white">6:00 PM</option>
+                <option value="18:30" className="text-slate-900 bg-white">6:30 PM</option>
+                <option value="16:00" className="text-slate-900 bg-white">4:00 PM</option>
+              </select>
+            )}
           </div>
 
           {/* Theme Mode Toggle Button */}

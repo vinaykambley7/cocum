@@ -21,7 +21,7 @@ export const StaffInstructionsView: React.FC = () => {
 
 With immediate effect, CUCOM is implementing a Daily Reporting System for all faculty and staff. Every team member is required to submit a concise daily report covering work completed, current status, key achievements, challenges/blockers, support required, and priority tasks for the next working day.
 
-The daily submission deadline is 5:00 PM. Reports submitted after 5:00 PM will be marked Late, and non-submissions will be automatically flagged on the management dashboard. Please report only activities relevant to your assigned role and responsibilities and use the designated status options: Done, In Progress, or Pending.
+The daily submission deadline is 5:30 PM. Reports submitted after 5:30 PM will be marked Late, and non-submissions will be automatically flagged on the management dashboard. Please report only activities relevant to your assigned role and responsibilities and use the designated status options: Done, In Progress, or Pending.
 
 Thank you for your cooperation and commitment to operational excellence.
 
@@ -44,8 +44,8 @@ Commonwealth University College of Medicine (CUCOM)`;
     {
       step: 2,
       item: 'Deadline',
-      instruction: 'Submit the daily report by 5:00 PM every working day. Late and missing submissions are automatically flagged.',
-      badge: '5:00 PM Daily'
+      instruction: 'Submit the daily report by 5:30 PM every working day. Late and missing submissions are automatically flagged.',
+      badge: '5:30 PM Daily'
     },
     {
       step: 3,
@@ -92,7 +92,7 @@ Commonwealth University College of Medicine (CUCOM)`;
     {
       step: 10,
       item: 'Submission time',
-      instruction: 'Enter the actual date/time when your report is submitted; the system automatically compares it with the 5:00 PM deadline.',
+      instruction: 'Enter the actual date/time when your report is submitted; the system automatically compares it with the 5:30 PM deadline.',
       badge: 'Automatic Compliance'
     },
     {
@@ -144,7 +144,7 @@ Commonwealth University College of Medicine (CUCOM)`;
             With immediate effect, <strong>CUCOM</strong> is implementing a <strong>Daily Reporting System</strong> for all faculty and staff. Every team member is required to submit a concise daily report covering work completed, current status, key achievements, challenges/blockers, support required, and priority tasks for the next working day.
           </p>
           <p className="p-3.5 bg-amber-50 dark:bg-amber-950/40 rounded-2xl border border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-200 font-semibold">
-            ⏰ <strong>The daily submission deadline is 5:00 PM.</strong> Reports submitted after 5:00 PM will be marked <strong>Late</strong>, and non-submissions will be automatically flagged on the management dashboard.
+            ⏰ <strong>The daily submission deadline is 5:30 PM.</strong> Reports submitted after 5:30 PM will be marked <strong>Late</strong>, and non-submissions will be automatically flagged on the management dashboard.
           </p>
           <p>
             Please report only activities relevant to your assigned role and responsibilities and use the designated status options: <strong>Done</strong>, <strong>In Progress</strong>, or <strong>Pending</strong>.

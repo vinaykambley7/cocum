@@ -146,7 +146,7 @@ Commonwealth University College of Medicine (CUCOM)`;
     const subject = `URGENT COMPLIANCE NOTICE: Daily Work Report Due Today (${selectedDate}) - CUCOM`;
     const body = `Dear Department Managers and Faculty,
 
-This is an official compliance notification from the Executive Dean's Office of Caribbean University College of Medicine (CUCOM).
+This is an official compliance notification from the Executive Dean's Office of Commonwealth University College of Medicine (CUCOM).
 
 According to institutional compliance records for ${selectedDate}, your department's Daily Work Report is currently PENDING submission. Daily reports must be logged by ${deadlineFormatted}.
 
@@ -157,7 +157,7 @@ Thank you for your prompt compliance.
 
 Sincerely,
 Office of the Executive Dean & Vice Chancellor
-Caribbean University College of Medicine (CUCOM)`;
+Commonwealth University College of Medicine (CUCOM)`;
 
     const mailtoUrl = `mailto:${encodeURIComponent(emails)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.open(mailtoUrl, '_blank');

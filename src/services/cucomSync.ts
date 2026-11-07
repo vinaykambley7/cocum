@@ -45,7 +45,7 @@ export function toSupabaseRow(report: DailyReport, authUserId?: string | null) {
     date: report.date,
     submission_time: report.submissionTime || null,
     submission_timestamp: report.submissionTimestamp || null,
-    deadline: report.deadline || '4:00 PM',
+    deadline: report.deadline || '5:30 PM',
     compliance_status: report.complianceStatus,
     overall_status: report.overallStatus,
     priority: report.priority || 'Normal',
@@ -107,10 +107,34 @@ export function fromSupabaseRow(row: any): DailyReport {
     department: row.department,
     designation: row.designation,
     date: typeof row.date === 'string' ? row.date.slice(0, 10) : new Date(row.date).toISOString().slice(0, 10),
-    deadline: row.deadline || '4:00 PM',
+    deadline: row.deadline === '4:00 PM' || row.deadline === '5:00 PM' ? '5:30 PM' : (row.deadline || '5:30 PM'),
     submissionTime: row.submission_time,
     submissionTimestamp: row.submission_timestamp,
-    complianceStatus: row.compliance_status || 'NOT SUBMITTED',
+    complianceStatus: (() => {
+      let status = row.compliance_status || 'NOT SUBMITTED';
+      if (status === 'LATE' && row.submission_time) {
+        try {
+          const normalized = String(row.submission_time).trim().toUpperCase();
+          let hours = 0;
+          let minutes = 0;
+          if (normalized.includes('AM') || normalized.includes('PM')) {
+            const parts = normalized.replace('AM', '').replace('PM', '').trim().split(':');
+            hours = parseInt(parts[0], 10);
+            minutes = parseInt(parts[1] || '0', 10);
+            if (normalized.includes('PM') && hours < 12) hours += 12;
+            if (normalized.includes('AM') && hours === 12) hours = 0;
+          } else {
+            const parts = normalized.split(':');
+            hours = parseInt(parts[0], 10);
+            minutes = parseInt(parts[1] || '0', 10);
+          }
+          if (hours < 17 || (hours === 17 && minutes <= 30)) {
+            status = 'SUBMITTED ON TIME';
+          }
+        } catch (e) {}
+      }
+      return status;
+    })(),
     overallStatus: row.overall_status || 'Completed',
     priority: row.priority || 'Normal',
     tasks: parsedTasks,

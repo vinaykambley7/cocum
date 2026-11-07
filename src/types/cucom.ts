@@ -62,7 +62,7 @@ export interface DailyReport {
   staffName: string;
   department: DepartmentRole;
   designation: string;
-  deadline: string; // "4:00 PM" or "5:00 PM"
+  deadline: string; // "5:30 PM" Daily Submission Deadline
   submissionTimestamp?: string;
   submissionTime?: string; // e.g. "03:45 PM"
   complianceStatus: ComplianceStatus;

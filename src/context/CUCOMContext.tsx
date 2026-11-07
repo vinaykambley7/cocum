@@ -84,7 +84,7 @@ const USERS_STORAGE_KEY = 'cucom_admin_managed_users_v3';
 const DEPARTMENTS_STORAGE_KEY = 'cucom_departments_v2';
 const DESIGNATIONS_STORAGE_KEY = 'cucom_designations_v2';
 const AUTH_SESSION_KEY = 'cucom_auth_user_session_v2';
-const DEADLINE_KEY = 'cucom_deadline_time_v4';
+const DEADLINE_KEY = 'cucom_deadline_time_v5';
 const SCOPE_KEY = 'cucom_staff_scope_v4';
 const THEME_KEY = 'cucom_theme_mode_v4';
 const LAYOUT_KEY = 'cucom_active_layout_v4';
@@ -229,13 +229,36 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('LOCAL_ACTIVE');
 
-  // Deadline: default 4:00 PM
+  // Deadline: default 5:30 PM (17:30)
   const [deadlineTime, setDeadlineTimeState] = useState<string>(() => {
-    return localStorage.getItem(DEADLINE_KEY) || '16:00';
+    try {
+      // Purge legacy 4:00 PM / 5:00 PM setting if present
+      const v4 = localStorage.getItem('cucom_deadline_time_v4');
+      if (v4 === '16:00' || v4 === '17:00') {
+        localStorage.removeItem('cucom_deadline_time_v4');
+      }
+      const saved = localStorage.getItem(DEADLINE_KEY);
+      if (saved && saved !== '16:00' && saved !== '17:00') {
+        return saved;
+      }
+    } catch (e) {}
+    return '17:30';
   });
 
   const deadlineFormatted = useMemo(() => {
-    return deadlineTime === '16:00' ? '4:00 PM' : deadlineTime === '17:00' ? '5:00 PM' : deadlineTime;
+    if (deadlineTime === '17:30') return '5:30 PM';
+    if (deadlineTime === '16:00') return '4:00 PM';
+    if (deadlineTime === '17:00') return '5:00 PM';
+    if (deadlineTime && deadlineTime.includes(':')) {
+      const [h, m] = deadlineTime.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        const period = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 === 0 ? 12 : h % 12;
+        const mStr = m < 10 ? `0${m}` : `${m}`;
+        return `${h12}:${mStr} ${period}`;
+      }
+    }
+    return '5:30 PM';
   }, [deadlineTime]);
 
   const setDeadlineTime = (time: string) => {
@@ -630,7 +653,34 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          return parsed;
+          return parsed.map((r: any) => {
+            const timeStr = r.submissionTime || '';
+            let status = r.complianceStatus;
+            if (status === 'LATE' && timeStr) {
+              const normalized = String(timeStr).trim().toUpperCase();
+              let hours = 0;
+              let minutes = 0;
+              if (normalized.includes('AM') || normalized.includes('PM')) {
+                const parts = normalized.replace('AM', '').replace('PM', '').trim().split(':');
+                hours = parseInt(parts[0], 10);
+                minutes = parseInt(parts[1] || '0', 10);
+                if (normalized.includes('PM') && hours < 12) hours += 12;
+                if (normalized.includes('AM') && hours === 12) hours = 0;
+              } else {
+                const parts = normalized.split(':');
+                hours = parseInt(parts[0], 10);
+                minutes = parseInt(parts[1] || '0', 10);
+              }
+              if (hours < 17 || (hours === 17 && minutes <= 30)) {
+                status = 'SUBMITTED ON TIME';
+              }
+            }
+            return {
+              ...r,
+              deadline: r.deadline === '4:00 PM' || r.deadline === '5:00 PM' ? '5:30 PM' : (r.deadline || '5:30 PM'),
+              complianceStatus: status
+            };
+          });
         }
       }
     } catch (e) {
@@ -769,7 +819,7 @@ export const CUCOMProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             department: r.department,
             designation: r.designation,
             date: r.date,
-            deadline: r.deadline || '4:00 PM',
+            deadline: r.deadline === '4:00 PM' || r.deadline === '5:00 PM' ? '5:30 PM' : (r.deadline || '5:30 PM'),
             submissionTime: r.submission_time,
             submissionTimestamp: r.submission_timestamp,
             complianceStatus: r.compliance_status,
