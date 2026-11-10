@@ -133,17 +133,20 @@ export const ManagementDashboard: React.FC = () => {
     : 'https://cucom.vercel.app';
 
   const safeTriggerMailto = (url: string) => {
-    // Avoid window.open(url, '_blank') because Chrome opens an empty "Untitled" about:blank tab
-    const link = document.createElement('a');
-    link.href = url;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      if (document.body.contains(link)) {
-        document.body.removeChild(link);
-      }
-    }, 200);
+    // Hidden iframe guarantees NO blank about:blank tab is ever created in Chrome
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 1500);
+    } catch {
+      window.location.href = url;
+    }
   };
 
   const openPendingReminderModal = () => {
