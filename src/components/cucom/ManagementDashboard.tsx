@@ -29,7 +29,9 @@ import {
   ListChecks,
   Paperclip,
   ExternalLink,
-  File
+  File,
+  Copy,
+  Check
 } from 'lucide-react';
 
 export const ManagementDashboard: React.FC = () => {
@@ -55,6 +57,18 @@ export const ManagementDashboard: React.FC = () => {
   const [activeReportDrawer, setActiveReportDrawer] = useState<DailyReport | null>(null);
   const [managerReviewInput, setManagerReviewInput] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  interface ReminderModalState {
+    isOpen: boolean;
+    recipients: { name: string; email: string }[];
+    subject: string;
+    body: string;
+    isAllPending: boolean;
+  }
+
+  const [reminderModal, setReminderModal] = useState<ReminderModalState | null>(null);
+  const [copiedEmails, setCopiedEmails] = useState(false);
+  const [copiedBody, setCopiedBody] = useState(false);
 
   const metrics = getMetricsForDate(selectedDate);
 
@@ -114,54 +128,108 @@ export const ManagementDashboard: React.FC = () => {
     showToast('Manager review remarks successfully recorded.');
   };
 
-  const sendEmailReminder = (staff: StaffMember) => {
-    const subject = `URGENT REMINDER: Daily Work Report Pending for ${selectedDate} - CUCOM`;
-    const body = `Dear ${staff.name},
+  const portalUrl = typeof window !== 'undefined' && window.location.origin.includes('http')
+    ? window.location.origin
+    : 'https://cucom.vercel.app';
 
-This is an official compliance notification from the Executive Leadership Office of Commonwealth University College of Medicine (CUCOM).
-
-Our records indicate that your Daily Work Report for today (${selectedDate}) has NOT been submitted. The institutional daily deadline is ${deadlineFormatted}.
-
-Please log in to the CUCOM Daily Reporting Portal immediately and submit your report:
-Portal: http://localhost:3000/
-
-If you are experiencing any technical issues or need assistance, please contact the IT Administration office promptly.
-
-Sincerely,
-Office of the Executive Dean & Vice Chancellor
-Commonwealth University College of Medicine (CUCOM)`;
-
-    const mailtoUrl = `mailto:${encodeURIComponent(staff.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(mailtoUrl, '_blank');
-    showToast(`Reminder email draft opened for ${staff.name} (${staff.email})`);
+  const safeTriggerMailto = (url: string) => {
+    // Avoid window.open(url, '_blank') because Chrome opens an empty "Untitled" about:blank tab
+    const link = document.createElement('a');
+    link.href = url;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
+    }, 200);
   };
 
-  const sendEmailToAllPending = () => {
+  const openPendingReminderModal = () => {
     const pendingStaff = filteredStaffList.filter(s => !reportsByStaff.has(s.id));
     if (pendingStaff.length === 0) {
       showToast('All staff in the selected scope have submitted their reports for today!');
       return;
     }
-    const emails = pendingStaff.map(s => s.email).join(',');
+
     const subject = `URGENT COMPLIANCE NOTICE: Daily Work Report Due Today (${selectedDate}) - CUCOM`;
-    const body = `Dear Department Managers and Faculty,
+    const body = `Dear Department Managers and Faculty,` + '\n\n' +
+      `This is an official compliance notification from the Executive Dean\'s Office of Commonwealth University College of Medicine (CUCOM).` + '\n\n' +
+      `According to institutional compliance records for ${selectedDate}, your department\'s Daily Work Report is currently PENDING submission. Daily reports must be logged by ${deadlineFormatted}.` + '\n\n' +
+      `Please sign in to the portal and submit your report as soon as possible:` + '\n' +
+      `${portalUrl}` + '\n\n' +
+      `Thank you for your prompt compliance.` + '\n\n' +
+      `Sincerely,` + '\n' +
+      `Office of the Executive Dean & Vice Chancellor` + '\n' +
+      `Commonwealth University College of Medicine (CUCOM)`;
 
-This is an official compliance notification from the Executive Dean's Office of Commonwealth University College of Medicine (CUCOM).
+    setReminderModal({
+      isOpen: true,
+      recipients: pendingStaff.map(s => ({ name: s.name, email: s.email })),
+      subject,
+      body,
+      isAllPending: true
+    });
+  };
 
-According to institutional compliance records for ${selectedDate}, your department's Daily Work Report is currently PENDING submission. Daily reports must be logged by ${deadlineFormatted}.
+  const openSingleReminderModal = (staff: StaffMember) => {
+    const subject = `URGENT REMINDER: Daily Work Report Pending for ${selectedDate} - CUCOM`;
+    const body = `Dear ${staff.name},` + '\n\n' +
+      `This is an official compliance notification from the Executive Leadership Office of Commonwealth University College of Medicine (CUCOM).` + '\n\n' +
+      `Our records indicate that your Daily Work Report for today (${selectedDate}) has NOT been submitted. The institutional daily deadline is ${deadlineFormatted}.` + '\n\n' +
+      `Please log in to the CUCOM Daily Reporting Portal immediately and submit your report:` + '\n' +
+      `${portalUrl}` + '\n\n' +
+      `If you are experiencing any technical issues or need assistance, please contact the IT Administration office promptly.` + '\n\n' +
+      `Sincerely,` + '\n' +
+      `Office of the Executive Dean & Vice Chancellor` + '\n' +
+      `Commonwealth University College of Medicine (CUCOM)`;
 
-Please sign in to the portal and submit your report as soon as possible:
-Portal: http://localhost:3000/
+    setReminderModal({
+      isOpen: true,
+      recipients: [{ name: staff.name, email: staff.email }],
+      subject,
+      body,
+      isAllPending: false
+    });
+  };
 
-Thank you for your prompt compliance.
+  const handleLaunchGmail = () => {
+    if (!reminderModal) return;
+    const emailList = reminderModal.recipients.map(r => r.email).join(',');
+    const gmailUrl = reminderModal.isAllPending
+      ? `https://mail.google.com/mail/?view=cm&fs=1&tf=1&bcc=${encodeURIComponent(emailList)}&su=${encodeURIComponent(reminderModal.subject)}&body=${encodeURIComponent(reminderModal.body)}`
+      : `https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=${encodeURIComponent(emailList)}&su=${encodeURIComponent(reminderModal.subject)}&body=${encodeURIComponent(reminderModal.body)}`;
+    window.open(gmailUrl, '_blank', 'noopener,noreferrer');
+    showToast('Draft opened in Gmail webmail!');
+  };
 
-Sincerely,
-Office of the Executive Dean & Vice Chancellor
-Commonwealth University College of Medicine (CUCOM)`;
+  const handleLaunchDesktopMail = () => {
+    if (!reminderModal) return;
+    const emailList = reminderModal.recipients.map(r => r.email).join(',');
+    const mailtoUrl = reminderModal.isAllPending
+      ? `mailto:?bcc=${encodeURIComponent(emailList)}&subject=${encodeURIComponent(reminderModal.subject)}&body=${encodeURIComponent(reminderModal.body)}`
+      : `mailto:${encodeURIComponent(emailList)}?subject=${encodeURIComponent(reminderModal.subject)}&body=${encodeURIComponent(reminderModal.body)}`;
+    safeTriggerMailto(mailtoUrl);
+    showToast('Handed off to desktop mail client (no blank tab)');
+  };
 
-    const mailtoUrl = `mailto:${encodeURIComponent(emails)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(mailtoUrl, '_blank');
-    showToast(`Dispatched reminder email to ${pendingStaff.length} pending staff members!`);
+  const handleCopyEmails = () => {
+    if (!reminderModal) return;
+    const emailList = reminderModal.recipients.map(r => r.email).join(', ');
+    navigator.clipboard.writeText(emailList);
+    setCopiedEmails(true);
+    showToast(`Copied ${reminderModal.recipients.length} email addresses to clipboard!`);
+    setTimeout(() => setCopiedEmails(false), 2500);
+  };
+
+  const handleCopyMessage = () => {
+    if (!reminderModal) return;
+    const fullText = `Subject: ${reminderModal.subject}\n\n${reminderModal.body}`;
+    navigator.clipboard.writeText(fullText);
+    setCopiedBody(true);
+    showToast('Email subject and body copied to clipboard!');
+    setTimeout(() => setCopiedBody(false), 2500);
   };
 
   return (
@@ -222,7 +290,7 @@ Commonwealth University College of Medicine (CUCOM)`;
           {metrics.notSubmitted > 0 && (
             <button
               type="button"
-              onClick={sendEmailToAllPending}
+              onClick={openPendingReminderModal}
               className="px-4 py-2 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition cursor-pointer active:scale-98"
               title="Send urgent email reminder to all pending staff"
             >
@@ -580,7 +648,7 @@ Commonwealth University College of Medicine (CUCOM)`;
                           {!report && (
                             <button
                               type="button"
-                              onClick={() => sendEmailReminder(staff)}
+                              onClick={() => openSingleReminderModal(staff)}
                               title={`Send email reminder to ${staff.name}`}
                               className="px-3 py-1.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800"
                             >
@@ -856,6 +924,159 @@ Commonwealth University College of Medicine (CUCOM)`;
                     <span>Save Executive Review</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ================= 4. REMINDER DISPATCH MODAL ================= */}
+      {reminderModal && reminderModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div 
+            className="bg-white dark:bg-[#111827] w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between bg-gradient-to-r from-red-50/70 via-rose-50/30 to-transparent dark:from-red-950/20 dark:via-transparent">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
+                  <span className="text-[11px] font-black uppercase tracking-wider text-red-600 dark:text-red-400">
+                    Executive Compliance Dispatch
+                  </span>
+                </div>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                  {reminderModal.isAllPending
+                    ? `Dispatch Reminder to ${reminderModal.recipients.length} Pending Staff`
+                    : `Send Reminder to ${reminderModal.recipients[0]?.name || 'Staff'}`}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Direct email notification with zero blank tabs. Open in Gmail, Desktop Mail, or copy text.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReminderModal(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 overflow-y-auto">
+              {/* Recipients Box */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    {reminderModal.isAllPending ? `Recipients (${reminderModal.recipients.length} in BCC - Privacy Protected):` : 'Recipient:'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleCopyEmails}
+                    className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedEmails ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-600 font-extrabold">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy All Emails</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 max-h-24 overflow-y-auto text-xs text-slate-700 dark:text-slate-300 font-mono flex flex-wrap gap-1.5">
+                  {reminderModal.recipients.map((r, i) => (
+                    <span 
+                      key={i} 
+                      className="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px]"
+                    >
+                      {r.name} &lt;{r.email}&gt;
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 block mb-1.5">
+                  Subject Line:
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={reminderModal.subject}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-900 dark:text-white font-semibold"
+                />
+              </div>
+
+              {/* Body Preview */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    Message Body Preview:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleCopyMessage}
+                    className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedBody ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-600 font-extrabold">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Full Message</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <textarea
+                  rows={6}
+                  readOnly
+                  value={reminderModal.body}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-800 dark:text-slate-200 font-sans leading-relaxed"
+                />
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setReminderModal(null)}
+                className="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+              >
+                Close
+              </button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleLaunchDesktopMail}
+                  className="px-4 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-bold text-xs flex items-center gap-2 transition cursor-pointer"
+                  title="Opens in Outlook or Windows Mail app directly without any blank tab"
+                >
+                  <Mail className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                  <span>Open Default Mail App</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLaunchGmail}
+                  className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs flex items-center gap-2 shadow-md shadow-red-600/20 transition cursor-pointer active:scale-98"
+                  title="Opens ready-to-send draft directly in Gmail webmail"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Open in Gmail Webmail</span>
+                </button>
               </div>
             </div>
           </div>
